@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>File sharing</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Loading Spinner -->
+  <div id="loading-overlay">
+    <div class="spinner"></div>
+  </div>
+
+  <!-- Action Banner -->
+  <div id="action-banner" style="display: none;"></div>
+
+  <!-- Main Page Content -->
+  <main class="pf-v6-c-page__main">
+    <!-- Page Header - Outside content boxes -->
+    <header class="pf-v6-c-page__header">
+      <h2>File sharing</h2>
+    </header>
+
+    <!-- Samba Not Installed Panel -->
+    <section id="samba-not-installed" class="samba-not-installed content-box" style="display: none;" aria-live="polite">
+      <h3>Samba is not installed</h3>
+      <p>To use file sharing, you need to install Samba and its dependencies.</p>
+      
+      <div class="install-instructions">
+        <h4>Installation instructions:</h4>
+        
+        <div style="margin: 12px 0;">
+          <strong>Fedora/RHEL:</strong>
+          <div class="install-command">sudo dnf install samba samba-common-tools</div>
+        </div>
+        
+        <div style="margin: 12px 0;">
+          <strong>Debian/Ubuntu:</strong>
+          <div class="install-command">sudo apt install samba samba-common-bin</div>
+        </div>
+        
+        <div style="margin: 12px 0;">
+          <strong>Other distributions:</strong>
+          <a href="https://www.samba.org/" target="_blank" rel="noopener" class="install-link">Visit the Samba project homepage</a>
+        </div>
+      </div>
+      
+      <button type="button" class="pf-v6-c-button pf-v6-c-button--primary" onclick="window.location.reload()">
+        Check again
+      </button>
+    </section>
+
+    <!-- Service Status -->
+    <section id="service-status-section" class="service-status-section content-box" style="display: none;" aria-live="polite">
+      <div class="service-status-header">
+        <h3>Service Status</h3>
+        <div class="service-status-display">
+          <span class="service-name">Samba (smbd)</span>
+          <span id="service-status-badge" class="status-badge status-unknown">Unknown</span>
+        </div>
+        <div class="service-actions">
+          <button type="button" class="pf-v6-c-button pf-v6-c-button--success-outline" id="start-service-btn" aria-label="Start Samba service">Start</button>
+          <button type="button" class="pf-v6-c-button pf-v6-c-button--warning-outline" id="restart-service-btn" aria-label="Restart Samba service" style="display: none;">Restart</button>
+          <button type="button" class="pf-v6-c-button pf-v6-c-button--danger-outline" id="stop-service-btn" aria-label="Stop Samba service" style="display: none;">Stop</button>
+          <div class="pf-v6-c-divider pf-m-vertical" role="separator"></div>
+          <button type="button" class="pf-v6-c-button pf-v6-c-button--primary" id="settings-btn" title="Settings">
+            Settings
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Main Content -->
+    <div id="main-content" class="content-box" style="display: none;">
+      <!-- Tab Navigation -->
+      <nav class="pf-v6-c-tabs" id="main-tabs" role="tablist">
+        <button type="button" class="pf-v6-c-tabs__tab active" data-tab="shares" role="tab" aria-selected="true" aria-controls="shares-tab">Shares</button>
+        <button type="button" class="pf-v6-c-tabs__tab" data-tab="users" role="tab" aria-selected="false" aria-controls="users-tab">Users</button>
+      </nav>
+
+      <!-- Shares Tab -->
+      <section id="shares-tab" class="tab-content active" role="tabpanel" aria-labelledby="shares-tab-button">
+        <!-- Shares Toolbar -->
+        <div class="table-toolbar">
+          <div class="search-section">
+            <label for="shares-search" class="sr-only">Filter shares</label>
+            <input type="search" id="shares-search" class="search-input" placeholder="Filter shares..." autocomplete="off">
+          </div>
+          <div class="toolbar-actions">
+            <button type="button" class="pf-v6-c-button pf-v6-c-button--primary" id="add-share-btn">
+              Add share
+            </button>
+          </div>
+        </div>
+        
+        <!-- Shares Table -->
+        <div class="table-container">
+          <table class="data-table" id="shares-table">
+            <thead>
+              <tr>
+                <th class="sortable" data-sort="name" scope="col">
+                  <button type="button" class="sort-button" aria-label="Sort by name">
+                    <span>Name</span>
+                    <span class="sort-indicator" aria-hidden="true"></span>
+                  </button>
+                </th>
+                <th class="sortable" data-sort="path" scope="col">
+                  <button type="button" class="sort-button" aria-label="Sort by path">
+                    <span>Path</span>
+                    <span class="sort-indicator" aria-hidden="true"></span>
+                  </button>
+                </th>
+                <th class="sortable" data-sort="comment" scope="col">
+                  <button type="button" class="sort-button" aria-label="Sort by comment">
+                    <span>Comment</span>
+                    <span class="sort-indicator" aria-hidden="true"></span>
+                  </button>
+                </th>
+                <th class="sortable" data-sort="access" scope="col">
+                  <button type="button" class="sort-button" aria-label="Sort by access">
+                    <span>Access</span>
+                    <span class="sort-indicator" aria-hidden="true"></span>
+                  </button>
+                </th>
+                <th class="actions-column" scope="col">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="shares-tbody">
+              <tr class="loading-row">
+                <td colspan="5" class="loading-cell">Loading shares...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Users Tab -->
+      <section id="users-tab" class="tab-content" role="tabpanel" aria-labelledby="users-tab-button">
+        <!-- Users Toolbar -->
+        <div class="table-toolbar">
+          <div class="search-section">
+            <label for="users-search" class="sr-only">Filter users</label>
+            <input type="search" id="users-search" class="search-input" placeholder="Filter users..." autocomplete="off">
+          </div>
+          <div class="toolbar-actions">
+            <button type="button" class="pf-v6-c-button pf-v6-c-button--primary" id="manage-users-btn">
+              Manage users
+            </button>
+          </div>
+        </div>
+        
+        <!-- Users Table -->
+        <div class="table-container">
+          <table class="data-table" id="users-table">
+            <thead>
+              <tr>
+                <th class="sortable" data-sort="username" scope="col">
+                  <button type="button" class="sort-button" aria-label="Sort by username">
+                    <span>Username</span>
+                    <span class="sort-indicator" aria-hidden="true"></span>
+                  </button>
+                </th>
+                <th class="sortable" data-sort="fullName" scope="col">
+                  <button type="button" class="sort-button" aria-label="Sort by full name">
+                    <span>Full Name</span>
+                    <span class="sort-indicator" aria-hidden="true"></span>
+                  </button>
+                </th>
+                <th class="sortable" data-sort="sambaEnabled" scope="col">
+                  <button type="button" class="sort-button" aria-label="Sort by Samba status">
+                    <span>Samba Status</span>
+                    <span class="sort-indicator" aria-hidden="true"></span>
+                  </button>
+                </th>
+                <th class="actions-column" scope="col">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="users-tbody">
+              <tr class="loading-row">
+                <td colspan="4" class="loading-cell">Loading users...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script src="../base1/cockpit.js"></script>
+  <!-- Load core modules that are always needed -->
+  <script src="modules/utils.js"></script>
+  <script src="modules/table.js"></script>
+  <script src="modules/modals.js"></script>
+  <script src="modules/config.js"></script>
+  <script src="modules/ui.js"></script>
+  <!-- Tab-specific modules will be loaded on demand -->
+  <!-- Main app coordinator now includes lazy loading -->
+  <script src="app.js"></script>
+</body>
+</html>

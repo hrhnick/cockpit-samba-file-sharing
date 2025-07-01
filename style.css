@@ -1,5 +1,30 @@
 /* PatternFly-inspired styles for Cockpit Samba Manager - Aligned with Docker Plugin */
 
+/* Performance optimizations for initial render */
+body {
+    /* Prevent layout shifts during loading */
+    min-height: 100vh;
+    contain: layout style;
+}
+
+.pf-v6-c-page__main {
+    /* Improve rendering performance */
+    will-change: contents;
+    contain: layout style;
+}
+
+/* Force GPU acceleration for smoother rendering */
+@media screen {
+    .content-box,
+    #main-content,
+    .pf-v6-c-modal,
+    .service-status-section,
+    .samba-not-installed {
+        transform: translateZ(0);
+        backface-visibility: hidden;
+    }
+}
+
 /* CSS Variables - Consolidated */
 :root {
   /* Core colors */
@@ -902,15 +927,16 @@ textarea {
   to { transform: rotate(360deg); }
 }
 
-/* Loading overlay */
+/* Loading overlay - Ensure smooth display */
 #loading-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.95);
   display: flex;
   justify-content: center;
   align-items: center;
   z-index: var(--z-overlay);
+  transition: opacity 0.3s ease-out;
 }
 
 /* Action banner */

@@ -1,291 +1,1389 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>File sharing</title>
-  <link rel="stylesheet" href="style.css" onload="window.cssLoaded = true">
-  
-  <!-- CSS Loading Detection Script -->
-  <script>
-    // Initialize CSS loading flag
-    window.cssLoaded = false;
-    
-    // Fallback detection for browsers that don't support onload for link tags
-    (function() {
-      var cssCheckInterval = setInterval(function() {
-        var sheets = document.styleSheets;
-        for (var i = 0; i < sheets.length; i++) {
-          if (sheets[i].href && sheets[i].href.includes('style.css')) {
-            try {
-              // Try to access rules - will throw if not loaded
-              var rules = sheets[i].cssRules || sheets[i].rules;
-              if (rules && rules.length > 0) {
-                window.cssLoaded = true;
-                clearInterval(cssCheckInterval);
-                console.log('CSS loaded via fallback detection');
-                break;
-              }
-            } catch (e) {
-              // Not loaded yet, continue checking
+    <title>Samba Manager</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <!-- 0. DARK MODE SYNCHRONIZER (Must be at the absolute top to catch Cockpit's theme before first paint)
+         Cockpit does NOT tell embedded plugin pages about the active theme via postMessage,
+         and it does not set a "cockpit-theme" cookie either. Instead, the shell stores the
+         user's choice ('light' | 'dark' | 'auto') under the localStorage key "shell:style".
+         Plugin pages are served from the same origin as the shell, so localStorage is shared
+         and can be read directly -- this mirrors Cockpit's own pkg/lib/cockpit-dark-theme.ts. -->
+    <script>
+        (function () {
+            function applyTheme(dark) {
+                var root = document.documentElement;
+                if (dark) {
+                    root.setAttribute('data-theme', 'dark');
+                } else {
+                    root.removeAttribute('data-theme');
+                }
             }
-          }
+
+            function isDark(style) {
+                style = style || localStorage.getItem('shell:style') || 'auto';
+                if (style === 'dark') return true;
+                if (style === 'light') return false;
+                // 'auto' follows the OS/browser preference, same as the Cockpit shell does
+                return !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+            }
+
+            function syncTheme(style) { applyTheme(isDark(style)); }
+
+            // The shell writes the new value to localStorage when the user switches themes.
+            // Since localStorage is shared across same-origin documents, this page (running in
+            // Cockpit's iframe) receives a "storage" event whenever the shell changes it.
+            window.addEventListener('storage', function (event) {
+                if (event.key === 'shell:style') syncTheme(event.newValue);
+            });
+
+            // Keep following the OS-level preference live while "auto" is selected.
+            if (window.matchMedia) {
+                window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function () {
+                    syncTheme();
+                });
+            }
+
+            syncTheme();
+        })();
+    </script>
+
+    <!-- Load Cockpit API -->
+    <script src="../base1/cockpit.js"></script>
+    
+    <!-- Load Red Hat Fonts via Google Fonts for isolated iframe environments -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Red+Hat+Display:wght@400&family=Red+Hat+Text:wght@400&display=swap" rel="stylesheet">
+    
+    <style>
+        /* 1. Base Variables (Light Mode) */
+        :root {
+            --pf-global--primary-color--100: #0066cc;
+            --pf-global--primary-color--200: #004080;
+            --pf-global--danger-color--100: #c9190b;
+            --pf-global--success-color--100: #3e8635;
+            --pf-global--warning-color--100: #f0ab00;
+            
+            --pf-global--BackgroundColor--100: #ffffff;
+            --pf-global--BackgroundColor--200: #f0f0f0;
+            --pf-global--BackgroundColor--300: #fafafa;
+            --pf-global--BackgroundColor--hover: #f8f8f8;
+            
+            --pf-global--Color--100: #151515;
+            --pf-global--Color--200: #6a6e73;
+            
+            --pf-global--BorderColor--100: #e0e0e0;
+            --pf-global--BorderColor--200: #8a8d90;
+            
+            --pf-global--FontFamily--sans-serif: "Red Hat Text", "Overpass", Helvetica, Arial, sans-serif;
+            --pf-global--FontFamily--heading: "Red Hat Display", "Overpass", Helvetica, Arial, sans-serif;
+
+            /* Radius scale tuned to match native Cockpit/PatternFly chrome:
+               small for inputs/dropdowns, medium for panels/overlays,
+               pill for buttons and badges (native Cockpit's action buttons,
+               like "Create new account", are fully rounded). */
+            --radius-sm: 3px;
+            --radius-md: 6px;
+            --radius-pill: 999px;
         }
-      }, 10);
-      
-      // Stop checking after 5 seconds (failsafe)
-      setTimeout(function() {
-        clearInterval(cssCheckInterval);
-        window.cssLoaded = true; // Assume loaded to prevent infinite wait
-      }, 5000);
-    })();
-  </script>
-  
-  <!-- Preload critical resources -->
-  <link rel="preload" href="../base1/cockpit.js" as="script">
-  <link rel="preload" href="modules/utils.js" as="script">
-  
-  <!-- Initial loading styles (inline for immediate application) -->
-  <style>
-    /* Critical loading styles */
-    #loading-overlay {
-      position: fixed;
-      inset: 0;
-      background: rgba(255, 255, 255, 0.95);
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      z-index: 9999;
-      transition: opacity 0.3s ease-out;
-    }
-    
-    @media (prefers-color-scheme: dark) {
-      #loading-overlay {
-        background: rgba(21, 21, 21, 0.95);
-      }
-    }
-    
-    .spinner {
-      border: 3px solid rgba(0, 0, 0, 0.1);
-      border-top: 3px solid #0066cc;
-      border-radius: 50%;
-      width: 40px;
-      height: 40px;
-      animation: spin 0.8s linear infinite;
-    }
-    
-    @keyframes spin {
-      to { transform: rotate(360deg); }
-    }
-    
-    /* Prevent layout shift during load */
-    body {
-      margin: 0;
-      min-height: 100vh;
-      overflow-x: hidden;
-    }
-    
-    /* Hide main content initially to prevent flash */
-    .pf-v6-c-page__main {
-      opacity: 0;
-      transition: opacity 0.2s ease-in;
-    }
-    
-    .pf-v6-c-page__main[data-revealed="true"] {
-      opacity: 1;
-    }
-  </style>
+
+        /* 3. Cockpit Injected Dark Mode */
+        html[data-theme='dark'] {
+            --pf-global--primary-color--100: #2b9af3 !important;
+            --pf-global--primary-color--200: #73bcf7 !important;
+            --pf-global--BackgroundColor--100: #1b1d21 !important;
+            --pf-global--BackgroundColor--200: #0f1014 !important;
+            --pf-global--BackgroundColor--300: #151619 !important;
+            --pf-global--BackgroundColor--hover: #26292d !important;
+            --pf-global--Color--100: #e0e0e0 !important;
+            --pf-global--Color--200: #a3a3a3 !important;
+            --pf-global--BorderColor--100: #3c3f42 !important;
+            --pf-global--BorderColor--200: #4f5255 !important;
+        }
+
+        /* FORCE ALL TEXT TO BE NON-BOLD AS REQUESTED */
+        * { font-weight: 400 !important; }
+
+        body {
+            font-family: var(--pf-global--FontFamily--sans-serif);
+            background-color: var(--pf-global--BackgroundColor--200);
+            color: var(--pf-global--Color--100);
+            margin: 0; padding: 24px; font-size: 14px; line-height: 1.5;
+        }
+
+        h1, h2, h3, .modal-header { font-family: var(--pf-global--FontFamily--heading); }
+        h1 { font-size: 28px; margin: 0 0 24px 0; color: var(--pf-global--Color--100); }
+
+        /* Flat, lightly-bordered cards (native Cockpit panels use a thin border
+           and little-to-no shadow rather than a heavy floating-card look) */
+        .card {
+            background: var(--pf-global--BackgroundColor--100);
+            border: 1px solid var(--pf-global--BorderColor--100);
+            border-radius: var(--radius-md); 
+            box-shadow: none;
+            margin-bottom: 24px;
+        }
+        .card-header {
+            padding: 20px 24px; border-bottom: 1px solid var(--pf-global--BorderColor--100);
+            display: flex; align-items: center; justify-content: space-between; font-size: 16px;
+            border-top-left-radius: var(--radius-md); border-top-right-radius: var(--radius-md);
+        }
+        .card-body { padding: 24px; }
+        .toolbar { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+
+        /* Dropdown Menu */
+        .dropdown-menu { position: absolute; top: 100%; right: 0; margin-top: 8px; background: var(--pf-global--BackgroundColor--100); border: 1px solid var(--pf-global--BorderColor--100); border-radius: var(--radius-md); box-shadow: 0 4px 12px rgba(0,0,0,0.15); width: 220px; z-index: 1000; overflow: hidden; }
+        .menu-item { display: block; width: 100%; padding: 12px 16px; text-align: left; background: none; border: none; font-size: 14px; font-family: var(--pf-global--FontFamily--sans-serif); color: var(--pf-global--Color--100); cursor: pointer; transition: background 0.1s; }
+        .menu-item:hover { background-color: var(--pf-global--BackgroundColor--hover); }
+        .menu-item.danger { color: var(--pf-global--danger-color--100); }
+        .menu-item.danger:hover { background-color: rgba(201, 25, 11, 0.05); }
+        .dropdown-divider { height: 1px; background: var(--pf-global--BorderColor--100); margin: 4px 0; }
+
+        /* Icon Button */
+        .icon-btn { background: transparent; border: none; cursor: pointer; color: var(--pf-global--Color--100); padding: 6px; border-radius: 4px; display: flex; align-items: center; justify-content: center; transition: background 0.2s; }
+        .icon-btn:hover { background-color: var(--pf-global--BackgroundColor--hover); }
+
+        /* Pill-shaped buttons -- confirmed against native Cockpit: "Create new
+           account" and "Create new group" on the Accounts page are fully rounded */
+        .btn {
+            display: inline-flex; align-items: center; justify-content: center;
+            padding: 6px 20px; font-size: 14px; border-radius: var(--radius-pill); cursor: pointer;
+            border: 1px solid transparent; text-decoration: none; transition: background-color 0.2s ease, box-shadow 0.2s ease;
+            font-family: var(--pf-global--FontFamily--sans-serif); white-space: nowrap;
+        }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-primary { background-color: var(--pf-global--primary-color--100); color: #ffffff !important; }
+        .btn-primary:hover:not(:disabled) { background-color: var(--pf-global--primary-color--200); }
+        .btn-secondary { background-color: transparent; color: var(--pf-global--primary-color--100); border-color: var(--pf-global--primary-color--100); }
+        .btn-secondary:hover:not(:disabled) { background-color: rgba(43, 154, 243, 0.06); }
+        .btn-success { background-color: var(--pf-global--success-color--100); color: #ffffff !important; }
+        .btn-success:hover:not(:disabled) { background-color: #2b6624; }
+        .btn-danger { background-color: var(--pf-global--danger-color--100); color: #ffffff !important; }
+        .btn-danger:hover:not(:disabled) { background-color: #a30000; }
+        .btn-warning { background-color: var(--pf-global--warning-color--100); color: #151515 !important; border: 1px solid #c58c00; }
+        .btn-warning:hover:not(:disabled) { background-color: #c58c00; }
+        /* Cancel/dismiss actions in native modals render as a plain text link, not a boxed button */
+        .btn-link { color: var(--pf-global--primary-color--100); background: transparent; padding: 6px 8px; }
+        .btn-link:hover:not(:disabled) { background-color: var(--pf-global--BackgroundColor--hover); text-decoration: none; }
+
+        /* Status Badge (kept pill-shaped -- native Cockpit's own Labels, like the
+           group badges on the Accounts page, are fully rounded) */
+        .status-badge {
+            display: inline-block; padding: 3px 12px; border-radius: 30px; font-size: 13px;
+            font-family: var(--pf-global--FontFamily--sans-serif);
+        }
+        .status-running { background: var(--pf-global--success-color--100); color: #ffffff; }
+        .status-stopped { background: var(--pf-global--danger-color--100); color: #ffffff; }
+        .status-unknown { background: var(--pf-global--Color--200); color: #ffffff; }
+
+        /* UI Enhancements & Attributes */
+        .vertical-divider { width: 1px; height: 32px; background-color: var(--pf-global--BorderColor--100); margin: 0 8px; }
+        .header-actions { display: flex; align-items: center; gap: 16px; margin-left: auto; flex-wrap: nowrap; }
+        
+        .search-box { position: relative; width: 260px; }
+        .search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); width: 16px; height: 16px; color: var(--pf-global--Color--200); }
+        .search-input { padding-left: 36px !important; }
+
+        .label-pill { display: inline-flex; align-items: center; padding: 2px 10px; border-radius: 30px; font-size: 12px; font-family: var(--pf-global--FontFamily--sans-serif); font-weight: 500 !important; white-space: nowrap; }
+        .label-yellow { background-color: #f0ab00; color: #151515; }
+        .label-blue { background-color: #bee1f4; color: #002952; }
+        
+        html[data-theme='dark'] .label-blue {
+            background-color: #92c5f9 !important; color: #151515 !important;
+        }
+
+        .sortable { cursor: pointer; user-select: none; transition: color 0.2s; }
+        .sortable:hover { color: var(--pf-global--primary-color--100); }
+        .sort-icon { display: inline-block; width: 12px; height: 12px; vertical-align: middle; margin-left: 6px; fill: currentColor; opacity: 0.3; }
+        .sort-icon.active { opacity: 1; color: var(--pf-global--primary-color--100); }
+
+        /* Spacious Table */
+        .table-responsive { overflow: visible; border-bottom-left-radius: var(--radius-md); border-bottom-right-radius: var(--radius-md); }
+        table { width: 100%; border-collapse: collapse; text-align: left; }
+        th { background: var(--pf-global--BackgroundColor--100); padding: 16px 24px; border-bottom: 1px solid var(--pf-global--BorderColor--100); color: var(--pf-global--Color--100); font-family: var(--pf-global--FontFamily--heading); }
+        td { padding: 16px 24px; border-bottom: 1px solid var(--pf-global--BorderColor--100); vertical-align: middle; color: var(--pf-global--Color--100); }
+        tr:hover td:not(.empty-cell) { background-color: var(--pf-global--BackgroundColor--hover); }
+        tr:last-child td { border-bottom: none; }
+
+        /* Soft Modals */
+        .modal-backdrop {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(21, 21, 21, 0.6); display: flex; align-items: center; justify-content: center;
+            z-index: 1000; backdrop-filter: blur(4px);
+        }
+        .modal {
+            background: var(--pf-global--BackgroundColor--100); width: 100%; max-width: 580px; border-radius: var(--radius-md);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.25); display: flex; flex-direction: column; max-height: 90vh;
+        }
+        .modal-header { padding: 24px; font-size: 22px; border-bottom: 1px solid var(--pf-global--BorderColor--100); display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+        .modal-body { padding: 24px; overflow-y: auto; }
+        /* Native PatternFly modal footers left-align their actions (primary button
+           first, plain Cancel link after) rather than pushing them to the right,
+           and sit flush against the body without a separate shaded background. */
+        .modal-footer {
+            padding: 20px 24px; border-top: 1px solid var(--pf-global--BorderColor--100);
+            display: flex; justify-content: flex-start; align-items: center;
+            border-bottom-left-radius: var(--radius-md); border-bottom-right-radius: var(--radius-md); gap: 8px;
+        }
+
+        /* Clean Forms */
+        .form-group { margin-bottom: 24px; }
+        .form-label { display: block; margin-bottom: 8px; color: var(--pf-global--Color--100); }
+        .form-control {
+            width: 100%; padding: 9px 12px; border: 1px solid var(--pf-global--BorderColor--200);
+            border-radius: var(--radius-sm); font-family: inherit; font-size: 14px; box-sizing: border-box;
+            background-color: var(--pf-global--BackgroundColor--100); color: var(--pf-global--Color--100); transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .form-control:focus { outline: none; border-color: var(--pf-global--primary-color--100); box-shadow: 0 0 0 2px rgba(43, 154, 243, 0.2); }
+        .form-control:disabled { background-color: var(--pf-global--BackgroundColor--200); color: var(--pf-global--Color--200); cursor: not-allowed; border-color: var(--pf-global--BorderColor--100); }
+        .checkbox-group { display: flex; flex-direction: column; gap: 14px; margin-top: 16px; padding: 16px; background: var(--pf-global--BackgroundColor--hover); border-radius: var(--radius-md); border: 1px solid var(--pf-global--BorderColor--100); }
+        .checkbox-item { display: flex; align-items: center; gap: 10px; cursor: pointer; color: var(--pf-global--Color--100); }
+        .checkbox-item input { width: 18px; height: 18px; cursor: pointer; accent-color: var(--pf-global--primary-color--100); }
+        .hidden { display: none !important; }
+
+        /* Floating Toasts */
+        .toast-container { position: fixed; top: 24px; right: 24px; z-index: 3000; display: flex; flex-direction: column; gap: 12px; }
+        .toast {
+            padding: 14px 24px; border-radius: var(--radius-md); color: #ffffff; box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            animation: slideIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); max-width: 350px; word-wrap: break-word; font-family: var(--pf-global--FontFamily--sans-serif);
+        }
+        .toast.success { background-color: var(--pf-global--success-color--100); }
+        .toast.error { background-color: var(--pf-global--danger-color--100); }
+        @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        .help-text { font-size: 13px; color: var(--pf-global--Color--200); margin-top: 6px; line-height: 1.4; }
+
+        /* Inline field validation -- errors surface directly on the field
+           instead of only in a toast, matching native Cockpit forms */
+        .form-control.error { border-color: var(--pf-global--danger-color--100); }
+        .form-control.error:focus { box-shadow: 0 0 0 2px rgba(201, 25, 11, 0.2); }
+        .field-error-text { font-size: 13px; color: var(--pf-global--danger-color--100); margin-top: 6px; line-height: 1.4; display: flex; align-items: center; gap: 6px; }
+        .field-error-text svg { flex-shrink: 0; }
+
+        /* Button loading spinner (native Cockpit swaps a spinner into the
+           button rather than just changing its label) */
+        @keyframes btn-spinner-spin { to { transform: rotate(360deg); } }
+        .btn-spinner {
+            display: inline-block; width: 14px; height: 14px; margin-right: 8px;
+            border: 2px solid rgba(255,255,255,0.45); border-top-color: #ffffff; border-radius: 50%;
+            animation: btn-spinner-spin 0.6s linear infinite; vertical-align: -2px;
+        }
+
+        /* =========================================
+           MOBILE RESPONSIVENESS & STACKED TABLES
+           ========================================= */
+        @media (max-width: 768px) {
+            body { padding: 12px; }
+            .card { padding: 0; margin-bottom: 16px; }
+            .card-header { flex-direction: column; align-items: flex-start; gap: 16px; }
+            .header-actions { flex-direction: column; align-items: stretch; width: 100%; gap: 12px; margin-left: 0; }
+            .vertical-divider { display: none; }
+            .toolbar { flex-direction: column; align-items: stretch; width: 100%; gap: 12px; }
+            .search-box { width: 100%; max-width: 100%; margin-left: 0; }
+            .btn { width: 100%; justify-content: center; }
+            
+            /* Convert Tables to Stacked Cards */
+            table, thead, tbody, th, td, tr { display: block; width: 100%; box-sizing: border-box; }
+            thead tr { display: none; }
+            tr { 
+                margin-bottom: 16px; 
+                border: 1px solid var(--pf-global--BorderColor--100); 
+                border-radius: 8px; 
+                background: var(--pf-global--BackgroundColor--100); 
+                overflow: hidden; 
+            }
+            tr.empty-row { border: none; background: transparent; }
+            td { 
+                display: flex; 
+                justify-content: space-between; 
+                align-items: center; 
+                padding: 12px 16px !important; 
+                border-bottom: 1px solid var(--pf-global--BorderColor--100) !important; 
+                text-align: right;
+                min-height: 44px;
+            }
+            td:last-child { border-bottom: none !important; }
+            
+            /* Inject Column Headers via data-label */
+            td::before { 
+                content: attr(data-label); 
+                font-family: var(--pf-global--FontFamily--heading); 
+                color: var(--pf-global--Color--200); 
+                padding-right: 16px;
+                text-align: left;
+                flex-shrink: 0;
+            }
+            
+            td > div { max-width: 60%; }
+            tr.empty-row td { display: block; text-align: center; border-bottom: none !important; }
+            tr.empty-row td::before { display: none; }
+
+            /* Modal Mobile Tweaks */
+            .modal { margin: 16px; width: auto; max-height: calc(100vh - 32px); }
+            .modal-header { flex-direction: row; align-items: flex-start; gap: 12px; }
+            .modal-footer { flex-direction: column-reverse; align-items: stretch; gap: 8px; }
+            .modal-footer .btn { width: 100%; }
+        }
+    </style>
 </head>
 <body>
-  <!-- Loading Spinner -->
-  <div id="loading-overlay">
-    <div class="spinner"></div>
-  </div>
 
-  <!-- Action Banner -->
-  <div id="action-banner" style="display: none;"></div>
+    <!-- Toast Notifications -->
+    <div id="toast-container" class="toast-container"></div>
 
-  <!-- Main Page Content -->
-  <main class="pf-v6-c-page__main">
-    <!-- Page Header - Outside content boxes -->
-    <header class="pf-v6-c-page__header">
-      <h2>File sharing</h2>
-    </header>
+    <h1>Samba shares</h1>
 
-    <!-- Samba Not Installed Panel -->
-    <section id="samba-not-installed" class="samba-not-installed content-box" style="display: none;" aria-live="polite">
-      <h3>Samba is not installed</h3>
-      <p>To use file sharing, you need to install Samba and its dependencies.</p>
-      
-      <div class="install-instructions">
-        <h4>Installation instructions:</h4>
-        
-        <div style="margin: 12px 0;">
-          <strong>Fedora/RHEL:</strong>
-          <div class="install-command">sudo dnf install samba samba-common-tools</div>
+    <div class="card">
+        <div class="card-header" style="border-bottom: none;">
+            <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                <span>SMB Service Status:</span> 
+                <span id="smb-status" class="status-badge status-unknown">Checking...</span>
+            </div>
+            <div style="position: relative; display: inline-block;">
+                <!-- Ellipsis Menu Icon -->
+                <button id="btn-actions-menu" class="icon-btn" aria-label="Actions">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+                        <circle cx="12" cy="5" r="2"></circle><circle cx="12" cy="12" r="2"></circle><circle cx="12" cy="19" r="2"></circle>
+                    </svg>
+                </button>
+                <div id="actions-dropdown" class="dropdown-menu hidden">
+                    <button id="menu-item-manage-passwords" class="menu-item">Manage Samba Passwords</button>
+                    <div class="dropdown-divider"></div>
+                    <button id="menu-item-global" class="menu-item">Edit Global Settings</button>
+                    <div class="dropdown-divider"></div>
+                    <button id="menu-item-start" class="menu-item hidden">Start Service</button>
+                    <button id="menu-item-restart" class="menu-item hidden">Restart Service</button>
+                    <button id="menu-item-stop" class="menu-item danger hidden">Stop Service</button>
+                </div>
+            </div>
         </div>
-        
-        <div style="margin: 12px 0;">
-          <strong>Debian/Ubuntu:</strong>
-          <div class="install-command">sudo apt install samba samba-common-bin</div>
-        </div>
-        
-        <div style="margin: 12px 0;">
-          <strong>Other distributions:</strong>
-          <a href="https://www.samba.org/" target="_blank" rel="noopener" class="install-link">Visit the Samba project homepage</a>
-        </div>
-      </div>
-      
-      <button type="button" class="pf-v6-c-button pf-v6-c-button--primary" onclick="window.location.reload()">
-        Check again
-      </button>
-    </section>
-
-    <!-- Service Status -->
-    <section id="service-status-section" class="service-status-section content-box" style="display: none;" aria-live="polite">
-      <div class="service-status-header">
-        <h3>Service Status</h3>
-        <div class="service-status-display">
-          <span class="service-name">Samba (smbd)</span>
-          <span id="service-status-badge" class="status-badge status-unknown">Unknown</span>
-        </div>
-        <div class="service-actions">
-          <button type="button" class="pf-v6-c-button pf-v6-c-button--success-outline" id="start-service-btn" aria-label="Start Samba service">Start</button>
-          <button type="button" class="pf-v6-c-button pf-v6-c-button--warning-outline" id="restart-service-btn" aria-label="Restart Samba service" style="display: none;">Restart</button>
-          <button type="button" class="pf-v6-c-button pf-v6-c-button--danger-outline" id="stop-service-btn" aria-label="Stop Samba service" style="display: none;">Stop</button>
-          <div class="pf-v6-c-divider pf-m-vertical" role="separator"></div>
-          <button type="button" class="pf-v6-c-button pf-v6-c-button--primary" id="settings-btn" title="Settings">
-            Settings
-          </button>
-        </div>
-      </div>
-    </section>
-
-    <!-- Main Content -->
-    <div id="main-content" class="content-box" style="display: none;">
-      <!-- Tab Navigation -->
-      <nav class="pf-v6-c-tabs" id="main-tabs" role="tablist">
-        <button type="button" class="pf-v6-c-tabs__tab active" data-tab="shares" role="tab" aria-selected="true" aria-controls="shares-tab">Shares</button>
-        <button type="button" class="pf-v6-c-tabs__tab" data-tab="users" role="tab" aria-selected="false" aria-controls="users-tab">Users</button>
-      </nav>
-
-      <!-- Shares Tab -->
-      <section id="shares-tab" class="tab-content active" role="tabpanel" aria-labelledby="shares-tab-button">
-        <!-- Shares Toolbar -->
-        <div class="table-toolbar">
-          <div class="search-section">
-            <label for="shares-search" class="sr-only">Filter shares</label>
-            <input type="search" id="shares-search" class="search-input" placeholder="Filter shares..." autocomplete="off">
-          </div>
-          <div class="toolbar-actions">
-            <button type="button" class="pf-v6-c-button pf-v6-c-button--primary" id="add-share-btn">
-              Add share
-            </button>
-          </div>
-        </div>
-        
-        <!-- Shares Table -->
-        <div class="table-container">
-          <table class="data-table" id="shares-table">
-            <thead>
-              <tr>
-                <th class="sortable" data-sort="name" scope="col">
-                  <button type="button" class="sort-button" aria-label="Sort by name">
-                    <span>Name</span>
-                    <span class="sort-indicator" aria-hidden="true"></span>
-                  </button>
-                </th>
-                <th class="sortable" data-sort="path" scope="col">
-                  <button type="button" class="sort-button" aria-label="Sort by path">
-                    <span>Path</span>
-                    <span class="sort-indicator" aria-hidden="true"></span>
-                  </button>
-                </th>
-                <th class="sortable" data-sort="comment" scope="col">
-                  <button type="button" class="sort-button" aria-label="Sort by comment">
-                    <span>Comment</span>
-                    <span class="sort-indicator" aria-hidden="true"></span>
-                  </button>
-                </th>
-                <th class="sortable" data-sort="access" scope="col">
-                  <button type="button" class="sort-button" aria-label="Sort by access">
-                    <span>Access</span>
-                    <span class="sort-indicator" aria-hidden="true"></span>
-                  </button>
-                </th>
-                <th class="actions-column" scope="col">Actions</th>
-              </tr>
-            </thead>
-            <tbody id="shares-tbody">
-              <tr class="loading-row">
-                <td colspan="5" class="loading-cell">Loading shares...</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <!-- Users Tab -->
-      <section id="users-tab" class="tab-content" role="tabpanel" aria-labelledby="users-tab-button">
-        <!-- Users Toolbar -->
-        <div class="table-toolbar">
-          <div class="search-section">
-            <label for="users-search" class="sr-only">Filter users</label>
-            <input type="search" id="users-search" class="search-input" placeholder="Filter users..." autocomplete="off">
-          </div>
-          <div class="toolbar-actions">
-            <button type="button" class="pf-v6-c-button pf-v6-c-button--primary" id="manage-users-btn">
-              Manage users
-            </button>
-          </div>
-        </div>
-        
-        <!-- Users Table -->
-        <div class="table-container">
-          <table class="data-table" id="users-table">
-            <thead>
-              <tr>
-                <th class="sortable" data-sort="username" scope="col">
-                  <button type="button" class="sort-button" aria-label="Sort by username">
-                    <span>Username</span>
-                    <span class="sort-indicator" aria-hidden="true"></span>
-                  </button>
-                </th>
-                <th class="sortable" data-sort="fullName" scope="col">
-                  <button type="button" class="sort-button" aria-label="Sort by full name">
-                    <span>Full Name</span>
-                    <span class="sort-indicator" aria-hidden="true"></span>
-                  </button>
-                </th>
-                <th class="sortable" data-sort="sambaEnabled" scope="col">
-                  <button type="button" class="sort-button" aria-label="Sort by Samba status">
-                    <span>Samba Status</span>
-                    <span class="sort-indicator" aria-hidden="true"></span>
-                  </button>
-                </th>
-                <th class="actions-column" scope="col">Actions</th>
-              </tr>
-            </thead>
-            <tbody id="users-tbody">
-              <tr class="loading-row">
-                <td colspan="4" class="loading-cell">Loading users...</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
     </div>
-  </main>
 
-  <script src="../base1/cockpit.js"></script>
-  <!-- Load core modules that are always needed -->
-  <script src="modules/utils.js"></script>
-  <script src="modules/table.js"></script>
-  <script src="modules/modals.js"></script>
-  <script src="modules/config.js"></script>
-  <script src="modules/ui.js"></script>
-  <!-- Tab-specific modules will be loaded on demand -->
-  <!-- Main app coordinator now includes lazy loading -->
-  <script src="app.js"></script>
+    <!-- Main Shares Card -->
+    <div class="card">
+        <div class="card-header" style="background: transparent; border-bottom: none; padding-bottom: 8px;">
+            <h2 style="margin: 0; font-size: 18px; color: var(--pf-global--Color--100);">Shares</h2>
+            <div class="header-actions">
+                <div class="search-box" style="margin: 0;">
+                    <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                    </svg>
+                    <input class="form-control search-input" type="text" id="share-filter" placeholder="Search for name, desc..." />
+                </div>
+                <div class="vertical-divider"></div>
+                <button id="btn-create-share" class="btn btn-primary">Create new share</button>
+            </div>
+        </div>
+        <div class="table-responsive">
+            <table id="shares-table">
+                <thead>
+                    <tr>
+                        <th class="sortable" data-sort="name">Share Name <svg class="sort-icon active" viewBox="0 0 24 24"><path d="M12 5l-7 7h14l-7-7z" /></svg></th>
+                        <th class="sortable" data-sort="path">Path <svg class="sort-icon" viewBox="0 0 24 24"><path d="M12 5l-7 7h14l-7-7z M12 19l-7-7h14l-7 7z" /></svg></th>
+                        <th>Description</th>
+                        <th>Attributes</th>
+                        <th style="width: 50px;"></th>
+                    </tr>
+                </thead>
+                <tbody id="shares-list">
+                    <tr class="empty-row"><td colspan="5" class="empty-cell" style="text-align: center; color: var(--pf-global--Color--200); padding: 32px;">Loading shares...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Modal Form for Edit/Add Share -->
+    <div id="share-modal" class="modal-backdrop hidden">
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="-1">
+            <div class="modal-header">
+                <span id="modal-title">Add/Edit Share</span>
+                <button class="icon-btn modal-close-x" aria-label="Close">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label" for="share-name">Share Name <span style="color:var(--pf-global--danger-color--100)">*</span></label>
+                    <input class="form-control" type="text" id="share-name" placeholder="e.g., public_share" required aria-describedby="share-name-error" />
+                    <div class="field-error-text hidden" id="share-name-error" role="alert"></div>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label" for="share-path">Absolute Path <span style="color:var(--pf-global--danger-color--100)">*</span></label>
+                    <input class="form-control" type="text" id="share-path" placeholder="/var/samba/public" required style="margin-bottom: 8px;" aria-describedby="share-path-error" />
+                    <div class="field-error-text hidden" id="share-path-error" role="alert"></div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="share-desc">Description</label>
+                    <input class="form-control" type="text" id="share-desc" placeholder="Shared public files" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="share-users">Valid Users/Groups</label>
+                    <input class="form-control" type="text" id="share-users" placeholder="e.g., @users, admin, john" list="user-group-datalist" autocomplete="off" />
+                    <datalist id="user-group-datalist"></datalist>
+                    <div class="help-text">Leave blank for all users. Use @ for groups. Start typing for suggestions from this system's users/groups.</div>
+                </div>
+                
+                <div class="checkbox-group">
+                    <label class="checkbox-item">
+                        <input type="checkbox" id="share-readonly" />
+                        <span>Read Only</span>
+                    </label>
+                    <label class="checkbox-item">
+                        <input type="checkbox" id="share-browsable" checked />
+                        <span>Browsable (Visible on network)</span>
+                    </label>
+                    <label class="checkbox-item">
+                        <input type="checkbox" id="share-guest" />
+                        <span>Guest Access (No password)</span>
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" id="btn-save-share">Save Share</button>
+                <button class="btn btn-link" id="btn-close-modal">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal for Password Management -->
+    <div id="password-modal" class="modal-backdrop hidden">
+        <div class="modal" style="max-width: 650px;" role="dialog" aria-modal="true" aria-labelledby="password-modal-title" tabindex="-1">
+            <div class="modal-header">
+                <div style="display: flex; align-items: center; gap: 16px; flex-wrap: wrap;">
+                    <span id="password-modal-title">Manage Samba Passwords</span>
+                    <a href="/users" target="_parent" class="btn btn-link" style="font-size: 14px;">Manage System Users</a>
+                </div>
+                <button class="icon-btn modal-close-x" aria-label="Close">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+            <div class="modal-body" style="padding: 0;">
+                <table style="width: 100%; border-collapse: collapse;">
+                    <thead class="users-table-head" style="background-color: var(--pf-global--BackgroundColor--hover);">
+                        <tr>
+                            <th style="padding: 12px 24px;">Linux User</th>
+                            <th style="padding: 12px 24px;">Samba Password</th>
+                            <th style="padding: 12px 24px; text-align: right;">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="users-list-body">
+                        <tr class="empty-row"><td colspan="3" class="empty-cell" style="text-align: center; color: var(--pf-global--Color--200); padding: 24px;">Loading users...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" id="btn-close-pwd-modal">Done</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Global Settings Modal -->
+    <div id="global-modal" class="modal-backdrop hidden" style="z-index: 1500;">
+        <div class="modal" style="max-width: 600px;" role="dialog" aria-modal="true" aria-labelledby="global-modal-title" tabindex="-1">
+            <div class="modal-header">
+                <span id="global-modal-title">Global Settings</span>
+                <button class="icon-btn modal-close-x" aria-label="Close">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="help-text" style="margin-bottom: 16px;">
+                    Edit the <code>[global]</code> section of your Samba configuration. 
+                    Changes are automatically validated before being applied.
+                </div>
+                <textarea id="global-settings-text" class="form-control" style="height: 350px; font-family: monospace; resize: vertical; white-space: pre;"></textarea>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" id="btn-save-global">Validate &amp; Save</button>
+                <button class="btn btn-link" id="btn-close-global">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Smart Confirm Modal for Missing Directories -->
+    <div id="confirm-modal" class="modal-backdrop hidden" style="z-index: 2000;">
+        <div class="modal" style="max-width: 450px;" role="dialog" aria-modal="true" aria-labelledby="confirm-title" tabindex="-1">
+            <div class="modal-header" style="font-size: 18px;">
+                <span id="confirm-title">Confirm</span>
+                <button class="icon-btn modal-close-x" id="btn-confirm-close-x" aria-label="Close">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+            <div class="modal-body" id="confirm-body" style="font-size: 15px;">
+                <!-- Filled dynamically -->
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" id="btn-confirm-ok">Yes</button>
+                <button class="btn btn-link" id="btn-confirm-cancel">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- 1. COCKPIT API MOCK (For Canvas Preview) ---
+        if (typeof window.cockpit === 'undefined') {
+            window.cockpit = {
+                spawn: function(args) { return Promise.resolve(""); },
+                file: function(path) {
+                    return { read: () => Promise.resolve(""), replace: () => Promise.resolve() };
+                }
+            };
+        }
+
+        // --- 2. GLOBAL VARIABLES ---
+        const SMB_CONF_PATH = '/etc/samba/smb.conf';
+        const fileObj = cockpit.file(SMB_CONF_PATH, { syntax: "string", superuser: "try" });
+        
+        let allConf = {};
+        let globalConf = {};
+        let sharesConf = {};
+        let isSELinuxEnabled = false;
+        let currentServiceName = "smb";
+        let currentSortKey = "name";
+        let currentSortAsc = true;
+
+        // --- 3. MODAL & ACCESSIBILITY HELPERS ---
+        // Tracks, per open dialog, which element had focus before it opened so
+        // focus can be restored correctly even with nested dialogs (e.g. the
+        // "create this directory?" confirm opened from within the share form).
+        const modalOpenerMap = new Map();
+
+        function getFocusableElements(container) {
+            return Array.from(container.querySelectorAll(
+                'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+            )).filter(el => el.offsetParent !== null);
+        }
+
+        function focusInitialElement(modalBox) {
+            // Prefer the first focusable control inside the body (e.g. the Share
+            // Name field) so the user can start typing immediately; fall back to
+            // any focusable element (e.g. the close X) if the body has none yet.
+            const body = modalBox.querySelector('.modal-body');
+            const bodyFocusables = body ? getFocusableElements(body) : [];
+            if (bodyFocusables.length > 0) { bodyFocusables[0].focus(); return; }
+            const allFocusables = getFocusableElements(modalBox);
+            (allFocusables[0] || modalBox).focus();
+        }
+
+        function openModal(backdrop) {
+            if (typeof backdrop === 'string') backdrop = document.getElementById(backdrop);
+            if (!backdrop) return;
+            modalOpenerMap.set(backdrop, document.activeElement);
+            backdrop.classList.remove('hidden');
+            const modalBox = backdrop.querySelector('.modal');
+            if (modalBox) focusInitialElement(modalBox);
+        }
+
+        function closeModal(backdrop) {
+            if (typeof backdrop === 'string') backdrop = document.getElementById(backdrop);
+            if (!backdrop) return;
+            backdrop.classList.add('hidden');
+            const opener = modalOpenerMap.get(backdrop);
+            modalOpenerMap.delete(backdrop);
+            if (opener && document.body.contains(opener) && typeof opener.focus === 'function') {
+                opener.focus();
+            }
+        }
+
+        function getTopmostVisibleBackdrop() {
+            const visible = Array.from(document.querySelectorAll('.modal-backdrop:not(.hidden)'));
+            if (visible.length === 0) return null;
+            return visible.reduce((top, el) => {
+                const z = parseInt(getComputedStyle(el).zIndex, 10) || 0;
+                const topZ = top ? (parseInt(getComputedStyle(top).zIndex, 10) || 0) : -Infinity;
+                return z >= topZ ? el : top;
+            }, null);
+        }
+
+        // Escape closes the top-most open dialog. The Confirm dialog is routed
+        // through its own Cancel button (rather than hidden directly) so the
+        // Promise returned by customConfirm() still resolves instead of hanging.
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' || e.key === 'Esc') {
+                const topmost = getTopmostVisibleBackdrop();
+                if (!topmost) return;
+                if (topmost.id === 'confirm-modal') {
+                    document.getElementById('btn-confirm-cancel').click();
+                } else {
+                    closeModal(topmost);
+                }
+                return;
+            }
+
+            // Trap Tab focus within the top-most open dialog.
+            if (e.key === 'Tab') {
+                const topmost = getTopmostVisibleBackdrop();
+                if (!topmost) return;
+                const modalBox = topmost.querySelector('.modal');
+                const focusables = modalBox ? getFocusableElements(modalBox) : [];
+                if (focusables.length === 0) return;
+                const first = focusables[0];
+                const last = focusables[focusables.length - 1];
+                if (e.shiftKey && document.activeElement === first) {
+                    e.preventDefault(); last.focus();
+                } else if (!e.shiftKey && document.activeElement === last) {
+                    e.preventDefault(); first.focus();
+                }
+            }
+        });
+
+        // Inline field validation -- puts the error directly on the offending
+        // field (red border + message) instead of only raising a toast.
+        function setFieldError(inputEl, errorEl, message) {
+            inputEl.classList.add('error');
+            inputEl.setAttribute('aria-invalid', 'true');
+            errorEl.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg><span>${message}</span>`;
+            errorEl.classList.remove('hidden');
+        }
+        function clearFieldError(inputEl, errorEl) {
+            inputEl.classList.remove('error');
+            inputEl.removeAttribute('aria-invalid');
+            errorEl.classList.add('hidden');
+            errorEl.innerHTML = '';
+        }
+
+        // Swaps a button's label for a spinner + status text while an async
+        // action runs, restoring the original label afterwards.
+        function setButtonLoading(btn, loadingText) {
+            if (btn.dataset.originalText === undefined) btn.dataset.originalText = btn.textContent;
+            btn.disabled = true;
+            btn.innerHTML = `<span class="btn-spinner" aria-hidden="true"></span>${loadingText}`;
+        }
+        function clearButtonLoading(btn) {
+            btn.disabled = false;
+            btn.textContent = btn.dataset.originalText !== undefined ? btn.dataset.originalText : btn.textContent;
+            delete btn.dataset.originalText;
+        }
+
+        // --- 4. TOAST & CONFIRM NOTIFICATIONS ---
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.textContent = message;
+            container.appendChild(toast);
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateX(100%)';
+                toast.style.transition = 'all 0.3s ease-in';
+                setTimeout(() => toast.remove(), 300);
+            }, 4000);
+        }
+
+        function customConfirm(title, message, okText, isDanger = false) {
+            return new Promise((resolve) => {
+                const modal = document.getElementById('confirm-modal');
+                document.getElementById('confirm-title').textContent = title;
+                document.getElementById('confirm-body').innerHTML = message;
+                const btnOk = document.getElementById('btn-confirm-ok');
+                const btnCancel = document.getElementById('btn-confirm-cancel');
+                const btnCloseX = document.getElementById('btn-confirm-close-x');
+                
+                btnOk.textContent = okText;
+                // Destructive actions (e.g. Delete Share) get the red danger treatment,
+                // matching native Cockpit's delete-confirmation buttons.
+                btnOk.classList.toggle('btn-primary', !isDanger);
+                btnOk.classList.toggle('btn-danger', isDanger);
+                
+                const cleanup = () => {
+                    closeModal(modal);
+                    btnOk.removeEventListener('click', onOk);
+                    btnCancel.removeEventListener('click', onCancel);
+                    btnCloseX.removeEventListener('click', onCancel);
+                };
+                
+                const onOk = () => { cleanup(); resolve(true); };
+                const onCancel = () => { cleanup(); resolve(false); };
+                
+                btnOk.addEventListener('click', onOk);
+                btnCancel.addEventListener('click', onCancel);
+                btnCloseX.addEventListener('click', onCancel);
+                
+                openModal(modal);
+            });
+        }
+
+        // --- 5. BACKEND LOGIC ---
+        async function checkService() {
+            let serviceName = "smb"; 
+            try { await cockpit.spawn(["systemctl", "status", "smb"], { superuser: "try" }); } 
+            catch (e) {
+                if (e.message && e.message.includes("could not be found")) {
+                    try { await cockpit.spawn(["systemctl", "status", "smbd"], { superuser: "try" }); serviceName = "smbd"; } 
+                    catch (e2) { return { status: "not installed", name: null }; }
+                }
+            }
+            
+            currentServiceName = serviceName;
+
+            try {
+                const isActive = await cockpit.spawn(["systemctl", "is-active", serviceName], { superuser: "try" });
+                return { status: isActive.trim() === "active" ? "running" : "stopped", name: serviceName };
+            } catch (e) { return { status: "stopped", name: serviceName }; }
+        }
+
+        async function checkSELinuxStatus() {
+            try {
+                const getenforce = await cockpit.spawn(["getenforce"], { superuser: "try" });
+                if (getenforce.trim() === "Enforcing" || getenforce.trim() === "Permissive") {
+                    isSELinuxEnabled = true;
+                }
+            } catch (e) {
+                isSELinuxEnabled = false;
+            }
+        }
+
+        window.manageService = async function(name, action) {
+            try {
+                await cockpit.spawn(["systemctl", action, name], { superuser: "try" });
+                showToast(`Service ${action} signal sent.`, "success");
+                setTimeout(async () => {
+                    const statusObj = await checkService();
+                    updateServiceStatus(statusObj);
+                }, 1000);
+            } catch (e) { showToast(`Error: ${e.message}`, "error"); }
+        }
+
+        async function readShares() {
+            const data = await fileObj.read();
+            if (!data) return {};
+
+            const lines = data.split('\n');
+            let shares = {};
+            let currentShare = null;
+
+            lines.forEach(line => {
+                line = line.trim();
+                if (!line || line.startsWith('#') || line.startsWith(';')) return;
+                const sectionMatch = line.match(/^\[(.*)\]$/);
+                if (sectionMatch) {
+                    currentShare = sectionMatch[1];
+                    shares[currentShare] = {};
+                } else if (currentShare) {
+                    const splitIndex = line.indexOf('=');
+                    if (splitIndex > -1) {
+                        const key = line.substring(0, splitIndex).trim();
+                        const value = line.substring(splitIndex + 1).trim();
+                        shares[currentShare][key] = value;
+                    }
+                }
+            });
+            return shares;
+        }
+
+        async function validateConfig(configText) {
+            try {
+                const tempFile = cockpit.file('/tmp/smb_test.conf', { superuser: "try" });
+                await tempFile.replace(configText);
+                await cockpit.spawn(["testparm", "-s", "/tmp/smb_test.conf"], { superuser: "try", err: "message" });
+                return { valid: true };
+            } catch (e) {
+                return { valid: false, error: e.message || "Invalid configuration syntax." };
+            }
+        }
+
+        async function saveShares(globalConfig, sharesConfig) {
+            let output = '[global]\n';
+            for (let key in globalConfig) output += `    ${key} = ${globalConfig[key]}\n`;
+            output += '\n';
+
+            for (let share in sharesConfig) {
+                if (share.toLowerCase() === 'global') continue;
+                output += `[${share}]\n`;
+                for (let key in sharesConfig[share]) {
+                    output += `    ${key} = ${sharesConfig[share][key]}\n`;
+                }
+                output += '\n';
+            }
+
+            const validation = await validateConfig(output);
+            if (!validation.valid) {
+                showToast("Configuration invalid! " + validation.error.substring(0, 80) + "...", "error");
+                throw new Error("Validation Failed");
+            }
+
+            try {
+                await cockpit.spawn(["cp", SMB_CONF_PATH, `${SMB_CONF_PATH}.bak`], { superuser: "try" });
+                await fileObj.replace(output);
+                const srv = await checkService();
+                if (srv.name && srv.status === "running") {
+                    await cockpit.spawn(["systemctl", "reload", srv.name], { superuser: "try" });
+                }
+                showToast("Samba configuration saved successfully.", "success");
+            } catch (err) {
+                showToast("Error saving configuration: " + err.message, "error");
+                console.error(err);
+            }
+        }
+
+        async function loadSystemUsers() {
+            try {
+                const passwd = await cockpit.spawn(["cat", "/etc/passwd"], { superuser: "try" });
+                const users = [];
+                const lines = passwd.split('\n');
+                
+                for (const line of lines) {
+                    if (!line.trim()) continue;
+                    const parts = line.split(':');
+                    if (parts.length < 7) continue;
+                    
+                    const username = parts[0];
+                    const uid = parseInt(parts[2], 10);
+                    const shell = parts[6];
+
+                    if (uid >= 1000 && uid < 60000 && !shell.includes('nologin') && !shell.includes('false') && !shell.includes('sync')) {
+                        let hasPass = false;
+                        try {
+                            await cockpit.spawn(["pdbedit", "-L", "-u", username], { superuser: "try" });
+                            hasPass = true;
+                        } catch(e) { hasPass = false; }
+                        users.push({ name: username, hasPass });
+                    }
+                }
+                return users;
+            } catch (e) { return []; }
+        }
+
+        // Populates the "Valid Users/Groups" datalist from this system's real
+        // accounts and groups, so typing offers autocomplete suggestions instead
+        // of relying on the admin to spell names correctly from memory.
+        async function loadUserGroupSuggestions() {
+            const datalist = document.getElementById('user-group-datalist');
+            if (!datalist) return;
+            const esc = (s) => s.replace(/"/g, '&quot;');
+            const suggestions = [];
+
+            try {
+                const passwdOut = await cockpit.spawn(['getent', 'passwd']);
+                passwdOut.trim().split('\n').forEach(line => {
+                    if (!line) return;
+                    const parts = line.split(':');
+                    if (parts.length < 7) return;
+                    const uid = parseInt(parts[2], 10);
+                    const shell = parts[6];
+                    // Keep root and regular login users; skip system/service accounts.
+                    if ((uid === 0 || uid >= 1000) && !shell.includes('nologin') && !shell.includes('false')) {
+                        suggestions.push(parts[0]);
+                    }
+                });
+            } catch (e) { /* getent unavailable (e.g. preview mode) -- ignore */ }
+
+            try {
+                const groupOut = await cockpit.spawn(['getent', 'group']);
+                groupOut.trim().split('\n').forEach(line => {
+                    if (!line) return;
+                    const parts = line.split(':');
+                    if (parts.length < 3) return;
+                    const gid = parseInt(parts[2], 10);
+                    if (gid === 0 || gid >= 1000) suggestions.push('@' + parts[0]);
+                });
+            } catch (e) { /* ignore */ }
+
+            datalist.innerHTML = suggestions.map(s => `<option value="${esc(s)}"></option>`).join('');
+        }
+
+        window.setSmbPassword = async function(user) {
+            const inputEl = document.getElementById(`new-pwd-${user}`);
+            const pass = inputEl.value;
+            if (!pass) return;
+
+            const inputString = `${pass}\n${pass}\n`;
+            try {
+                await cockpit.spawn(["smbpasswd", "-a", "-s", user], { err: "out", directory: "/", superuser: "try" })
+                    .input(inputString);
+                showToast(`Password updated for user ${user}.`, "success");
+                renderUsersModal();
+            } catch (e) {
+                showToast(`Failed to update password for ${user}.`, "error");
+            }
+        }
+
+        // --- 6. UI LOGIC ---
+        function updateServiceStatus(statusObj) {
+            const el = document.getElementById("smb-status");
+            el.textContent = statusObj.status;
+            el.className = "status-badge";
+            
+            const btnStart = document.getElementById('menu-item-start');
+            const btnStop = document.getElementById('menu-item-stop');
+            const btnRestart = document.getElementById('menu-item-restart');
+
+            if (statusObj.status === "running") {
+                el.classList.add("status-running");
+                btnStart.classList.add('hidden');
+                btnStop.classList.remove('hidden');
+                btnRestart.classList.remove('hidden');
+            } else if (statusObj.status === "stopped") {
+                el.classList.add("status-stopped");
+                btnStart.classList.remove('hidden');
+                btnStop.classList.add('hidden');
+                btnRestart.classList.add('hidden');
+            } else { 
+                el.classList.add("status-stopped");
+                btnStart.classList.add('hidden');
+                btnStop.classList.add('hidden');
+                btnRestart.classList.add('hidden');
+            }
+        }
+
+        function renderTable() {
+            const tbody = document.getElementById("shares-list");
+            tbody.innerHTML = '';
+
+            const shareNames = Object.keys(sharesConf);
+            if (shareNames.length === 0) {
+                tbody.innerHTML = '<tr class="empty-row"><td colspan="5" class="empty-cell" style="text-align: center; color: var(--pf-global--Color--200); padding: 32px;">No shares found. Click "Create new share" to create one.</td></tr>';
+                return;
+            }
+
+            // Convert to array and sort dynamically
+            let sharesArray = shareNames.map(name => ({ name: name, config: sharesConf[name] }));
+            sharesArray.sort((a, b) => {
+                let valA = a.name.toLowerCase();
+                let valB = b.name.toLowerCase();
+                if (currentSortKey === 'path') {
+                    valA = (a.config.path || '').toLowerCase();
+                    valB = (b.config.path || '').toLowerCase();
+                }
+                if (valA < valB) return currentSortAsc ? -1 : 1;
+                if (valA > valB) return currentSortAsc ? 1 : -1;
+                return 0;
+            });
+
+            // Update Sort Icons in Header
+            document.querySelectorAll('.sortable').forEach(th => {
+                const icon = th.querySelector('.sort-icon');
+                if (th.getAttribute('data-sort') === currentSortKey) {
+                    icon.classList.add('active');
+                    icon.innerHTML = currentSortAsc 
+                        ? '<path d="M12 5l-7 7h14l-7-7z" />' 
+                        : '<path d="M12 19l-7-7h14l-7 7z" />';
+                } else {
+                    icon.classList.remove('active');
+                    icon.innerHTML = '<path d="M12 5l-7 7h14l-7-7z M12 19l-7-7h14l-7 7z" opacity="0.3"/>';
+                }
+            });
+
+            for (const item of sharesArray) {
+                const name = item.name;
+                const config = item.config;
+                const tr = document.createElement("tr");
+                tr.className = "share-row";
+                
+                // Build Attributes Labels
+                let attrsHtml = '<div style="display:flex; gap:6px; flex-wrap:wrap;">';
+                if (config['read only'] === 'yes') attrsHtml += '<span class="label-pill label-yellow">Read Only</span>';
+                if (config['guest ok'] === 'yes') attrsHtml += '<span class="label-pill label-blue">Guest Access</span>';
+                if (config['browsable'] !== 'no') attrsHtml += '<span class="label-pill label-blue">Browsable</span>';
+                attrsHtml += '</div>';
+
+                // Construct Row with data-labels for mobile layout
+                tr.innerHTML = `
+                    <td data-label="Share Name" class="share-name-cell"><span>${name}</span></td>
+                    <td data-label="Path">
+                        <div id="path-content-${btoa(name).replace(/=/g, '')}" style="display:inline-flex; align-items:center; flex-wrap: wrap; gap:8px; justify-content:flex-end;">
+                            <code style="background: var(--pf-global--BackgroundColor--200); padding: 4px 8px; border-radius: 4px; font-family: monospace; word-break: break-all;">${config.path || ''}</code>
+                        </div>
+                    </td>
+                    <td data-label="Description" class="share-desc-cell">${config.comment || '<em style="color:var(--pf-global--Color--200)">None</em>'}</td>
+                    <td data-label="Attributes">${attrsHtml}</td>
+                    <td style="text-align: right; overflow: visible;">
+                        <div style="position: relative; display: inline-block;">
+                            <button class="icon-btn row-actions-btn" aria-label="Actions" data-share="${name}">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+                                    <circle cx="12" cy="5" r="2"></circle><circle cx="12" cy="12" r="2"></circle><circle cx="12" cy="19" r="2"></circle>
+                                </svg>
+                            </button>
+                            <div class="dropdown-menu row-actions-dropdown hidden" id="dropdown-${btoa(name).replace(/=/g, '')}">
+                                <button class="menu-item edit-share-btn" data-share="${name}">Edit</button>
+                                <div class="dropdown-divider"></div>
+                                <button class="menu-item danger delete-share-btn" data-share="${name}">Delete</button>
+                            </div>
+                        </div>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+
+                // Safe SELinux Checker (Strictly ignores root '/')
+                if (isSELinuxEnabled && config.path && config.path.trim() !== '/' && config.path.trim() !== '') {
+                    cockpit.spawn(["ls", "-Zd", config.path], {superuser: "try"}).then(out => {
+                        if (!out.includes("samba_share_t") && !out.includes("public_content_t")) {
+                            const tdContent = document.getElementById(`path-content-${btoa(name).replace(/=/g, '')}`);
+                            const fixBtn = document.createElement("button");
+                            fixBtn.className = "btn btn-warning";
+                            fixBtn.style.padding = "2px 8px"; fixBtn.style.fontSize = "11px";
+                            fixBtn.textContent = "Fix SELinux";
+                            fixBtn.onclick = async () => {
+                                try {
+                                    await cockpit.spawn(["chcon", "-R", "-t", "samba_share_t", config.path], {superuser: "try"});
+                                    showToast("SELinux context applied to " + config.path, "success");
+                                    fixBtn.remove();
+                                } catch(e) { showToast("Failed to set SELinux: " + e.message, "error"); }
+                            };
+                            if (tdContent) tdContent.appendChild(fixBtn);
+                        }
+                    }).catch(e => { /* Ignore */ });
+                }
+            }
+
+            // Row Actions Dropdown Logic
+            document.querySelectorAll('.row-actions-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const name = btn.getAttribute('data-share');
+                    const dropdown = document.getElementById(`dropdown-${btoa(name).replace(/=/g, '')}`);
+                    
+                    // Close all other row dropdowns first
+                    document.querySelectorAll('.row-actions-dropdown').forEach(d => {
+                        if (d !== dropdown) d.classList.add('hidden');
+                    });
+                    
+                    dropdown.classList.toggle('hidden');
+                });
+            });
+
+            // Edit Share Binding
+            document.querySelectorAll('.edit-share-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const name = e.target.getAttribute('data-share');
+                    openShareModal(name, sharesConf[name]);
+                    e.target.closest('.dropdown-menu').classList.add('hidden');
+                });
+            });
+
+            // Delete Share Binding
+            document.querySelectorAll('.delete-share-btn').forEach(btn => {
+                btn.addEventListener('click', async (e) => {
+                    const name = e.target.getAttribute('data-share');
+                    e.target.closest('.dropdown-menu').classList.add('hidden');
+                    
+                    const deleteIt = await customConfirm(
+                        "Delete Share",
+                        `Are you sure you want to delete the share <strong>${name}</strong>?<br>This will not delete the files on disk, only the share configuration.`,
+                        "Delete Share",
+                        true
+                    );
+
+                    if (deleteIt) {
+                        delete sharesConf[name];
+                        try { 
+                            await saveShares(globalConf, sharesConf); 
+                            await loadData(); 
+                        } catch(err){}
+                    }
+                });
+            });
+
+            // Re-apply search filter visually if active after sort
+            const term = document.getElementById('share-filter').value.toLowerCase();
+            if (term) {
+                document.querySelectorAll('#shares-list .share-row').forEach(row => {
+                    const name = row.querySelector('.share-name-cell').textContent.toLowerCase();
+                    const desc = row.querySelector('.share-desc-cell').textContent.toLowerCase();
+                    row.style.display = (name.includes(term) || desc.includes(term)) ? '' : 'none';
+                });
+            }
+        }
+
+        async function renderUsersModal() {
+            const tbody = document.getElementById("users-list-body");
+            tbody.innerHTML = '<tr class="empty-row"><td colspan="3" class="empty-cell" style="text-align: center; color: var(--pf-global--Color--200); padding: 24px;">Loading users...</td></tr>';
+            const users = await loadSystemUsers();
+            tbody.innerHTML = '';
+
+            if (users.length === 0) {
+                tbody.innerHTML = '<tr class="empty-row"><td colspan="3" class="empty-cell" style="text-align: center; color: var(--pf-global--Color--200); padding: 24px;">No standard users found.</td></tr>';
+                return;
+            }
+
+            users.forEach(u => {
+                const tr = document.createElement("tr");
+                tr.innerHTML = `
+                    <td data-label="Linux User" style="padding: 16px 24px;">${u.name}</td>
+                    <td data-label="Samba Password" style="padding: 16px 24px;">
+                        ${u.hasPass ? '<span style="color: var(--pf-global--success-color--100);">Set</span>' : '<span style="color: var(--pf-global--Color--200);">Not Set</span>'}
+                    </td>
+                    <td data-label="Action" style="padding: 16px 24px; text-align: right;" id="action-cell-${u.name}">
+                        <div style="display:inline-flex; gap:8px; flex-wrap:wrap; justify-content:flex-end;">
+                            <button class="btn btn-secondary" style="padding: 4px 12px; font-size: 13px;" onclick="promptPasswordInline('${u.name}')">
+                                ${u.hasPass ? 'Reset' : 'Set'}
+                            </button>
+                        </div>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        window.promptPasswordInline = function(username) {
+            const cell = document.getElementById(`action-cell-${username}`);
+            cell.innerHTML = `
+                <div style="display: flex; gap: 8px; justify-content: flex-end; align-items: center; flex-wrap: wrap;">
+                    <input type="password" id="new-pwd-${username}" class="form-control" style="width: 130px; padding: 4px 8px;" placeholder="New password" />
+                    <button class="btn btn-primary" style="padding: 4px 12px; font-size: 13px;" onclick="setSmbPassword('${username}')">Save</button>
+                    <button class="btn btn-link" style="padding: 4px 8px; font-size: 13px;" onclick="renderUsersModal()">Cancel</button>
+                </div>
+            `;
+            document.getElementById(`new-pwd-${username}`).focus();
+        };
+
+        function openShareModal(name = '', config = {}) {
+            document.getElementById('share-name').value = name;
+            document.getElementById('share-path').value = config.path || '';
+            document.getElementById('share-desc').value = config.comment || '';
+            document.getElementById('share-users').value = config['valid users'] || '';
+            
+            document.getElementById('share-readonly').checked = config['read only'] !== 'no';
+            document.getElementById('share-browsable').checked = config.browsable !== 'no';
+            document.getElementById('share-guest').checked = config['guest ok'] === 'yes';
+
+            document.getElementById('share-name').disabled = !!name;
+            document.getElementById('modal-title').textContent = name ? "Edit Share: " + name : "Add New Share";
+
+            clearFieldError(document.getElementById('share-name'), document.getElementById('share-name-error'));
+            clearFieldError(document.getElementById('share-path'), document.getElementById('share-path-error'));
+            
+            openModal(document.getElementById('share-modal'));
+        }
+
+        // --- 7. INITIALIZATION & EVENT BINDING ---
+        async function loadData() {
+            allConf = await readShares();
+            globalConf = allConf['global'] || {};
+            sharesConf = {};
+            for (let key in allConf) {
+                if (key.toLowerCase() !== 'global') sharesConf[key] = allConf[key];
+            }
+            renderTable();
+        }
+
+        async function init() {
+            await checkSELinuxStatus();
+            const statusObj = await checkService();
+            updateServiceStatus(statusObj);
+            await loadData();
+
+            // Modal Close (X) Buttons -- native-style dismiss, same effect as each
+            // modal's own Cancel/Done action.
+            document.querySelectorAll('.modal-close-x').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const backdrop = btn.closest('.modal-backdrop');
+                    if (backdrop) closeModal(backdrop);
+                });
+            });
+
+            // Search Filter
+            document.getElementById('share-filter').addEventListener('input', (e) => {
+                const term = e.target.value.toLowerCase();
+                document.querySelectorAll('#shares-list .share-row').forEach(row => {
+                    const name = row.querySelector('.share-name-cell').textContent.toLowerCase();
+                    const desc = row.querySelector('.share-desc-cell').textContent.toLowerCase();
+                    row.style.display = (name.includes(term) || desc.includes(term)) ? '' : 'none';
+                });
+            });
+
+            // Actions Menu Dropdown Logic
+            const btnActions = document.getElementById('btn-actions-menu');
+            const dropdownActions = document.getElementById('actions-dropdown');
+            
+            btnActions.addEventListener('click', (e) => {
+                e.stopPropagation();
+                dropdownActions.classList.toggle('hidden');
+            });
+            
+            document.addEventListener('click', (e) => {
+                if (!dropdownActions.contains(e.target)) {
+                    dropdownActions.classList.add('hidden');
+                }
+                
+                // Close row dropdowns if clicking outside
+                if (!e.target.closest('.row-actions-btn')) {
+                    document.querySelectorAll('.row-actions-dropdown').forEach(d => d.classList.add('hidden'));
+                }
+            });
+
+            // Sorting Logic
+            document.querySelectorAll('.sortable').forEach(th => {
+                th.addEventListener('click', () => {
+                    const key = th.getAttribute('data-sort');
+                    if (currentSortKey === key) {
+                        currentSortAsc = !currentSortAsc;
+                    } else {
+                        currentSortKey = key;
+                        currentSortAsc = true;
+                    }
+                    renderTable();
+                });
+            });
+
+            // Create Share (Header Button)
+            document.getElementById('btn-create-share').addEventListener('click', () => { 
+                openShareModal(); 
+            });
+            
+            // Passwords & Globals Menu Items
+            const pwdModal = document.getElementById('password-modal');
+            document.getElementById('menu-item-manage-passwords').addEventListener('click', () => { 
+                dropdownActions.classList.add('hidden'); 
+                openModal(pwdModal);
+                renderUsersModal();
+            });
+            document.getElementById('btn-close-pwd-modal').addEventListener('click', () => closeModal(pwdModal));
+
+            // Service Controls (Menu Items)
+            document.getElementById('menu-item-start').addEventListener('click', () => { manageService(currentServiceName, 'start'); dropdownActions.classList.add('hidden'); });
+            document.getElementById('menu-item-stop').addEventListener('click', () => { manageService(currentServiceName, 'stop'); dropdownActions.classList.add('hidden'); });
+            document.getElementById('menu-item-restart').addEventListener('click', () => { manageService(currentServiceName, 'restart'); dropdownActions.classList.add('hidden'); });
+
+            // Global Settings Modal Logic
+            const globalModal = document.getElementById('global-modal');
+            
+            document.getElementById('menu-item-global').addEventListener('click', () => {
+                dropdownActions.classList.add('hidden');
+                let text = "";
+                for (let k in globalConf) { text += `    ${k} = ${globalConf[k]}\n`; }
+                document.getElementById('global-settings-text').value = text;
+                openModal(globalModal);
+            });
+            
+            document.getElementById('btn-close-global').addEventListener('click', () => closeModal(globalModal));
+            
+            document.getElementById('btn-save-global').addEventListener('click', async () => {
+                const btnSave = document.getElementById('btn-save-global');
+                setButtonLoading(btnSave, "Validating...");
+
+                const text = document.getElementById('global-settings-text').value;
+                const lines = text.split('\n');
+                let newGlobal = {};
+                
+                lines.forEach(line => {
+                    line = line.trim();
+                    if (!line || line.startsWith('#') || line.startsWith(';')) return;
+                    const splitIndex = line.indexOf('=');
+                    if (splitIndex > -1) {
+                        newGlobal[line.substring(0, splitIndex).trim()] = line.substring(splitIndex + 1).trim();
+                    }
+                });
+
+                const oldGlobal = { ...globalConf };
+                globalConf = newGlobal;
+
+                try {
+                    await saveShares(globalConf, sharesConf);
+                    closeModal(globalModal);
+                } catch (e) {
+                    globalConf = oldGlobal; // Rollback on validation failure
+                } finally {
+                    clearButtonLoading(btnSave);
+                }
+            });
+
+            // Close Share Modal Binding
+            document.getElementById('btn-close-modal').addEventListener('click', () => closeModal(document.getElementById('share-modal')));
+
+            // Clear a field's error as soon as the user starts correcting it.
+            const shareNameInputEl = document.getElementById('share-name');
+            const sharePathInputEl = document.getElementById('share-path');
+            const shareNameErrorEl = document.getElementById('share-name-error');
+            const sharePathErrorEl = document.getElementById('share-path-error');
+            shareNameInputEl.addEventListener('input', () => clearFieldError(shareNameInputEl, shareNameErrorEl));
+            sharePathInputEl.addEventListener('input', () => clearFieldError(sharePathInputEl, sharePathErrorEl));
+
+            document.getElementById('btn-save-share').addEventListener('click', async () => {
+                const nameInput = shareNameInputEl;
+                const pathInput = sharePathInputEl;
+                const nameError = shareNameErrorEl;
+                const pathError = sharePathErrorEl;
+                const name = nameInput.value.trim();
+                const path = pathInput.value.trim();
+
+                clearFieldError(nameInput, nameError);
+                clearFieldError(pathInput, pathError);
+
+                let hasError = false;
+                if (!name) {
+                    setFieldError(nameInput, nameError, "Share name is required.");
+                    hasError = true;
+                } else if (name.toLowerCase() === 'global') {
+                    setFieldError(nameInput, nameError, 'Cannot name a share "global" -- that name is reserved for global settings.');
+                    hasError = true;
+                }
+                if (!path) {
+                    setFieldError(pathInput, pathError, "Absolute path is required.");
+                    hasError = true;
+                }
+
+                if (hasError) {
+                    (!nameError.classList.contains('hidden') ? nameInput : pathInput).focus();
+                    return;
+                }
+
+                // Directory Auto-Detect & Creation Logic
+                let dirExists = true;
+                try {
+                    await cockpit.spawn(['test', '-d', path], {superuser: "try"});
+                } catch (e) {
+                    dirExists = false; // The test command fails if it's not a valid directory
+                }
+
+                if (!dirExists) {
+                    const createIt = await customConfirm(
+                        "Directory Does Not Exist",
+                        `The path <strong>${path}</strong> was not found on the filesystem.<br><br>Would you like to automatically create this directory?`,
+                        "Create Directory"
+                    );
+                    
+                    if (createIt) {
+                        try {
+                            await cockpit.spawn(['mkdir', '-p', path], {superuser: "try"});
+                            await cockpit.spawn(['chmod', '777', path], {superuser: "try"});
+                            showToast("Directory created successfully.", "success");
+                        } catch (e) {
+                            showToast("Failed setting up directory: " + e.message, "error");
+                            return; // Stop saving if dir creation fails
+                        }
+                    } else {
+                        return; // User clicked Cancel
+                    }
+                }
+
+                const config = {
+                    path: path,
+                    comment: document.getElementById('share-desc').value,
+                    'read only': document.getElementById('share-readonly').checked ? 'yes' : 'no',
+                    'browsable': document.getElementById('share-browsable').checked ? 'yes' : 'no',
+                    'guest ok': document.getElementById('share-guest').checked ? 'yes' : 'no'
+                };
+
+                const validUsers = document.getElementById('share-users').value.trim();
+                if (validUsers) config['valid users'] = validUsers;
+
+                sharesConf[name] = config;
+                
+                const saveBtn = document.getElementById('btn-save-share');
+                setButtonLoading(saveBtn, "Validating...");
+                
+                try {
+                    await saveShares(globalConf, sharesConf);
+                    await loadData();
+                    closeModal(document.getElementById('share-modal'));
+                } catch(e) {
+                    // Handled inside saveShares (Toast notification)
+                } finally {
+                    clearButtonLoading(saveBtn);
+                }
+            });
+
+            // Populate the Valid Users/Groups suggestion list from this system's
+            // real accounts/groups (best-effort; failures are silently ignored).
+            loadUserGroupSuggestions();
+        }
+
+        init();
+    </script>
 </body>
 </html>

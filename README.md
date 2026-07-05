@@ -1,8 +1,9 @@
 # Cockpit Samba Manager
 
-A hacked, probably broken, file sharing management plugin for [Cockpit](https://cockpit-project.org/) that provides a web interface for managing Samba shares and users.
+A hacked, probably broken, two file (.json + .html) file sharing management plugin for [Cockpit](https://cockpit-project.org/) that provides a web interface for managing Samba shares and users.
 
-![2025_06_30___21_49_03](https://github.com/user-attachments/assets/adb8d24c-abf0-46d0-b25a-737e93380c6d)
+<img width="1257" height="943" alt="screenshot" src="https://github.com/user-attachments/assets/69f2b796-1e58-44b6-af3b-68f65e2f63a2" />
+
 
 ## Installation
 

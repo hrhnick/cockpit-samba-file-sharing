@@ -900,15 +900,44 @@
             return result.join(', ');
         }
 
+        // Classifies how a share directory's permissions should be set based
+        // on its Valid Users/Groups value. Shared by applySharePermissions()
+        // (which actually runs the commands) and describeSharePermissionPlan()
+        // (which explains them in the "create this directory?" confirmation),
+        // so the two can never drift out of sync with each other.
+        function classifySharePermissionPlan(validUsersRaw) {
+            const { users, groups } = parseValidUsersField(validUsersRaw);
+            if (users.length === 0 && groups.length === 0) return { mode: 'open', users, groups };
+            if (users.length === 0 && groups.length === 1) return { mode: 'group', users, groups };
+            return { mode: 'acl', users, groups };
+        }
+
+        // Human-readable explanation of exactly what applySharePermissions()
+        // is about to do, shown in the "create this directory?" confirmation
+        // so the admin understands what access the new directory will
+        // actually have before agreeing to create it.
+        function describeSharePermissionPlan(validUsersRaw) {
+            const { mode, users, groups } = classifySharePermissionPlan(validUsersRaw);
+
+            if (mode === 'open') {
+                return `<strong>Valid Users/Groups is blank</strong>, so the new directory will be left open to everyone (<code>chmod 777</code>) to match Samba's own "any connection allowed" setting for this share.`;
+            }
+            if (mode === 'group') {
+                return `The directory's group will be set to <strong>${groups[0]}</strong>, with access restricted to the owner and that group only (<code>chmod 2770</code>). Files added later will automatically stay in that group too.`;
+            }
+            const named = [...users, ...groups.map(g => '@' + g)].map(n => `<strong>${n}</strong>`).join(', ');
+            return `Access will be locked down to just the owner (<code>chmod 770</code>), then individually granted via ACLs to: ${named}.`;
+        }
+
         // Sets ownership/permissions on a newly-created share directory based on
         // who is actually allowed to connect, rather than always leaving it
         // wide open. Returns { aclWarning: true } if the directory is usable but
         // per-user ACLs specifically couldn't be applied (e.g. no ACL support on
         // this filesystem), so the caller can surface that distinctly.
         async function applySharePermissions(path, validUsersRaw) {
-            const { users, groups } = parseValidUsersField(validUsersRaw);
+            const { mode, users, groups } = classifySharePermissionPlan(validUsersRaw);
 
-            if (users.length === 0 && groups.length === 0) {
+            if (mode === 'open') {
                 // Blank field = Samba allows any connection through (including
                 // guest, depending on config) -- there's no specific restriction
                 // to enforce, so leave the directory open rather than guessing.
@@ -916,7 +945,7 @@
                 return {};
             }
 
-            if (users.length === 0 && groups.length === 1) {
+            if (mode === 'group') {
                 // A single group maps directly to a plain chgrp. The setgid bit
                 // (leading "2") makes files later created inside the share
                 // inherit this group automatically, so access stays correct as
@@ -1457,6 +1486,11 @@
                         applySuggestion(items[highlightedIndex].dataset.value);
                     }
                 } else if (e.key === 'Escape') {
+                    // Without this, Escape would also bubble up to the global
+                    // modal-close handler and dismiss the entire Add/Edit Share
+                    // dialog -- discarding whatever else was typed -- when the
+                    // intent here is just to dismiss the suggestion list.
+                    e.stopPropagation();
                     closeDropdown();
                     highlightedIndex = -1;
                 }
@@ -1673,7 +1707,7 @@
                 if (!dirExists) {
                     const createIt = await customConfirm(
                         "Directory Does Not Exist",
-                        `The path <strong>${path}</strong> was not found on the filesystem.<br><br>Would you like to automatically create this directory?`,
+                        `The path <strong>${path}</strong> was not found on the filesystem.<br><br>Would you like to automatically create this directory?<br><br>${describeSharePermissionPlan(validUsersRaw)}`,
                         "Create Directory"
                     );
                     

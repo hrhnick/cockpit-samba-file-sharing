@@ -177,8 +177,6 @@
         .btn:disabled { opacity: 0.5; cursor: not-allowed; }
         .btn-primary { background-color: var(--pf-global--primary-color--100); color: #ffffff !important; }
         .btn-primary:hover:not(:disabled) { background-color: var(--pf-global--primary-color--200); }
-        .btn-secondary { background-color: transparent; color: var(--pf-global--primary-color--100); border-color: var(--pf-global--primary-color--100); }
-        .btn-secondary:hover:not(:disabled) { background-color: rgba(43, 154, 243, 0.06); }
         .btn-danger { background-color: var(--pf-global--danger-color--100); color: #ffffff !important; }
         .btn-danger:hover:not(:disabled) { background-color: #a30000; }
         /* Cancel/dismiss actions in native modals render as a plain text link, not a boxed button */
@@ -206,12 +204,21 @@
         .label-pill { display: inline-flex; align-items: center; padding: 2px 10px; border-radius: 30px; font-size: 12px; font-family: var(--pf-global--FontFamily--sans-serif); font-weight: 500 !important; white-space: nowrap; }
         .label-yellow { background-color: #f0ab00; color: #151515; }
         .label-blue { background-color: #bee1f4; color: #002952; }
+        .label-green { background-color: #d4edda; color: #14532d; }
+        .label-red { background-color: #f8d7da; color: #721c24; }
         
         html[data-theme='dark'] .label-blue {
             background-color: #92c5f9 !important; color: #151515 !important;
         }
+        html[data-theme='dark'] .label-green {
+            background-color: #3e8635 !important; color: #ffffff !important;
+        }
+        html[data-theme='dark'] .label-red {
+            background-color: #c9190b !important; color: #ffffff !important;
+        }
 
-        .sortable { cursor: pointer; user-select: none; transition: color 0.2s; }
+        .sortable, .pwd-sortable { cursor: pointer; user-select: none; transition: color 0.2s; }
+        .pwd-sortable:hover { color: var(--pf-global--primary-color--100); }
         .sortable:hover { color: var(--pf-global--primary-color--100); }
         .sort-icon { display: inline-block; width: 12px; height: 12px; vertical-align: middle; margin-left: 6px; fill: currentColor; opacity: 0.3; }
         .sort-icon.active { opacity: 1; color: var(--pf-global--primary-color--100); }
@@ -353,8 +360,13 @@
     <div class="card">
         <div class="card-header" style="border-bottom: none;">
             <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
-                <span>SMB Service Status:</span> 
+                <span>SMB Status:</span> 
                 <span id="smb-status" class="status-badge status-unknown">Checking...</span>
+                <span id="smb-version-line" style="font-size: 13px; color: var(--pf-global--Color--200);">Version <span style="color: var(--pf-global--Color--100);" id="smb-version">N/A</span></span>
+                <div class="vertical-divider" style="height: 16px; margin: 0;"></div>
+                <span id="smb-active-since-line" style="font-size: 13px; color: var(--pf-global--Color--200);">Active since <span style="color: var(--pf-global--Color--100);" id="smb-active-since">N/A</span></span>
+                <div class="vertical-divider" style="height: 16px; margin: 0;"></div>
+                <span id="smb-connections-line" style="font-size: 13px; color: var(--pf-global--Color--200);">Connections <span style="color: var(--pf-global--Color--100);" id="smb-connections">N/A</span></span>
             </div>
             <div style="position: relative; display: inline-block;">
                 <!-- Ellipsis Menu Icon -->
@@ -364,7 +376,7 @@
                     </svg>
                 </button>
                 <div id="actions-dropdown" class="dropdown-menu hidden">
-                    <button id="menu-item-manage-passwords" class="menu-item">Manage Samba Passwords</button>
+                    <button id="menu-item-manage-passwords" class="menu-item">Manage Samba Access</button>
                     <div class="dropdown-divider"></div>
                     <button id="menu-item-global" class="menu-item">Edit Global Settings</button>
                     <div class="dropdown-divider"></div>
@@ -471,23 +483,31 @@
 
     <!-- Modal for Password Management -->
     <div id="password-modal" class="modal-backdrop hidden">
-        <div class="modal" style="max-width: 650px;" role="dialog" aria-modal="true" aria-labelledby="password-modal-title" tabindex="-1">
+        <div class="modal" style="max-width: 650px; min-height: 500px;" role="dialog" aria-modal="true" aria-labelledby="password-modal-title" tabindex="-1">
             <div class="modal-header">
-                <div style="display: flex; align-items: center; gap: 16px; flex-wrap: wrap;">
-                    <span id="password-modal-title">Manage Samba Passwords</span>
-                    <a href="/users" target="_parent" class="btn btn-link" style="font-size: 14px;">Manage System Users</a>
-                </div>
+                <span id="password-modal-title">Manage Samba Access</span>
                 <button class="icon-btn modal-close-x" aria-label="Close">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                 </button>
             </div>
-            <div class="modal-body" style="padding: 0;">
-                <table style="width: 100%; border-collapse: collapse;">
+            <div class="modal-body" style="padding: 0; flex: 1;">
+                <div style="padding: 20px 24px 0;">
+                    <div class="search-box" style="width: 100%;">
+                        <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                        <input class="form-control search-input" type="text" id="pwd-filter" placeholder="Search for username..." style="width: 100%;" />
+                    </div>
+                    <ul class="help-text" style="margin: 8px 0 0; padding-left: 18px;">
+                        <li>To allow Samba access, click the ellipsis next to the username and set a Samba password.</li>
+                        <li>To remove Samba access, click the ellipsis next to the username and remove the Samba password.</li>
+                        <li>To create a new user, visit <a href="/users" target="_parent" style="color: var(--pf-global--primary-color--100); text-decoration: underline;">Accounts</a>.</li>
+                    </ul>
+                </div>
+                <table style="width: 100%; border-collapse: collapse; margin-top: 16px;">
                     <thead class="users-table-head" style="background-color: var(--pf-global--BackgroundColor--hover);">
                         <tr>
-                            <th style="padding: 12px 24px;">Linux User</th>
-                            <th style="padding: 12px 24px;">Samba Password</th>
-                            <th style="padding: 12px 24px; text-align: right;">Action</th>
+                            <th class="pwd-sortable" data-sort="name" style="padding: 12px 24px;">Username <svg class="sort-icon active" viewBox="0 0 24 24"><path d="M12 5l-7 7h14l-7-7z" /></svg></th>
+                            <th style="padding: 12px 24px;">Status</th>
+                            <th style="padding: 12px 24px;"></th>
                         </tr>
                     </thead>
                     <tbody id="users-list-body">
@@ -579,6 +599,11 @@
         // derived from the share name, so a stale check can otherwise still
         // find a same-ID element from a brand new render and duplicate onto it).
         let tableRenderGeneration = 0;
+        // Separate sort state for the Manage Samba Passwords table, so it
+        // can't be confused with (or accidentally driven by) the Shares
+        // table's own currentSortKey/currentSortAsc.
+        let pwdSortKey = 'name';
+        let pwdSortAsc = true;
         let userGroupSuggestions = []; // Flat list like ['root', 'admin', '@wheel', ...]
 
         // --- 3. MODAL & ACCESSIBILITY HELPERS ---
@@ -801,6 +826,51 @@
             } catch (e) { return { status: "stopped", name: serviceName }; }
         }
 
+        // Fetches the supplementary details shown next to the status badge:
+        // Samba's installed version (independent of whether the service is
+        // currently running -- just whether the package is present), and,
+        // only while actually running, how long it's been up and how many
+        // clients are currently connected. This is a one-time snapshot taken
+        // whenever the status itself is (re)checked, not a live/polled value.
+        async function loadServiceDetails(statusObj) {
+            const versionEl = document.getElementById('smb-version');
+            const activeSinceEl = document.getElementById('smb-active-since');
+            const connectionsEl = document.getElementById('smb-connections');
+
+            // Reset to N/A each time -- e.g. after stopping the service,
+            // "Active since" and "Connections" should read N/A rather than
+            // keep showing stale values from when it was last running.
+            versionEl.textContent = 'N/A';
+            activeSinceEl.textContent = 'N/A';
+            connectionsEl.textContent = 'N/A';
+
+            if (statusObj.status !== "not installed") {
+                try {
+                    const out = await cockpit.spawn(["smbd", "--version"], { superuser: "try" });
+                    // Typical output: "Version 4.19.5-Debian" -- drop the label.
+                    versionEl.textContent = out.trim().replace(/^Version\s+/i, '');
+                } catch (e) { /* smbd binary not found/runnable -- leave as N/A */ }
+            }
+
+            if (statusObj.status === "running" && statusObj.name) {
+                try {
+                    const ts = await cockpit.spawn(["systemctl", "show", statusObj.name, "--property=ActiveEnterTimestamp", "--value"], { superuser: "try" });
+                    const trimmed = ts.trim();
+                    if (trimmed) activeSinceEl.textContent = trimmed;
+                } catch (e) { /* leave as N/A */ }
+
+                try {
+                    const out = await cockpit.spawn(["smbstatus", "-p"], { superuser: "try" });
+                    // Best-effort count: each active session prints one line
+                    // starting with a numeric PID. This isn't a guaranteed-
+                    // stable table format across every Samba version, but is
+                    // a reasonable heuristic for a quick-glance count.
+                    const count = out.split('\n').filter(line => /^\d+\s/.test(line)).length;
+                    connectionsEl.textContent = String(count);
+                } catch (e) { /* smbstatus unavailable/errored -- leave as N/A */ }
+            }
+        }
+
         async function checkSELinuxStatus() {
             try {
                 const getenforce = await cockpit.spawn(["getenforce"], { superuser: "try" });
@@ -819,6 +889,7 @@
                 setTimeout(async () => {
                     const statusObj = await checkService();
                     updateServiceStatus(statusObj);
+                    loadServiceDetails(statusObj);
                 }, 1000);
             } catch (e) { showToast(`Error: ${e.message}`, "error"); }
         }
@@ -1175,10 +1246,27 @@
             }
         }
 
+        window.removeSmbPassword = async function(username) {
+            const doRemove = await customConfirm(
+                "Remove Samba Password",
+                `This will remove <strong>${username}</strong>'s Samba password, preventing them from authenticating to any Samba share until a new password is set.`,
+                "Remove Password",
+                true
+            );
+            if (!doRemove) return;
+
+            try {
+                await cockpit.spawn(["pdbedit", "-x", "-u", username], { superuser: "try" });
+                showToast(`Samba password removed for ${username}.`, "success");
+                renderUsersModal();
+            } catch (e) {
+                showToast(`Failed to remove password for ${username}: ` + e.message, "error");
+            }
+        }
+
         // --- 6. UI LOGIC ---
         function updateServiceStatus(statusObj) {
             const el = document.getElementById("smb-status");
-            el.textContent = statusObj.status;
             el.className = "status-badge";
             
             const btnStart = document.getElementById('menu-item-start');
@@ -1186,17 +1274,24 @@
             const btnRestart = document.getElementById('menu-item-restart');
 
             if (statusObj.status === "running") {
+                el.textContent = "Running";
                 el.classList.add("status-running");
                 btnStart.classList.add('hidden');
                 btnStop.classList.remove('hidden');
                 btnRestart.classList.remove('hidden');
             } else if (statusObj.status === "stopped") {
+                el.textContent = "Stopped";
                 el.classList.add("status-stopped");
                 btnStart.classList.remove('hidden');
                 btnStop.classList.add('hidden');
                 btnRestart.classList.add('hidden');
             } else { 
-                el.classList.add("status-stopped");
+                // "not installed" (or any other unexpected state) gets a
+                // distinct, neutral color rather than reusing Stopped's red --
+                // it calls for installing the package, not starting a service
+                // that's already there, so it shouldn't look equally urgent.
+                el.textContent = "Not Installed";
+                el.classList.add("status-unknown");
                 btnStart.classList.add('hidden');
                 btnStop.classList.add('hidden');
                 btnRestart.classList.add('hidden');
@@ -1409,28 +1504,86 @@
             const users = await loadSystemUsers();
             tbody.innerHTML = '';
 
+            // Keep the sort icon in sync even before checking for an empty list,
+            // so it's correct the moment users do show up.
+            document.querySelectorAll('.pwd-sortable').forEach(th => {
+                const icon = th.querySelector('.sort-icon');
+                if (th.getAttribute('data-sort') === pwdSortKey) {
+                    icon.classList.add('active');
+                    icon.innerHTML = pwdSortAsc
+                        ? '<path d="M12 5l-7 7h14l-7-7z" />'
+                        : '<path d="M12 19l-7-7h14l-7 7z" />';
+                } else {
+                    icon.classList.remove('active');
+                    icon.innerHTML = '<path d="M12 5l-7 7h14l-7-7z M12 19l-7-7h14l-7 7z" opacity="0.3"/>';
+                }
+            });
+
             if (users.length === 0) {
                 tbody.innerHTML = '<tr class="empty-row"><td colspan="3" class="empty-cell" style="text-align: center; color: var(--pf-global--Color--200); padding: 24px;">No standard users found.</td></tr>';
                 return;
             }
 
+            users.sort((a, b) => {
+                const valA = a.name.toLowerCase();
+                const valB = b.name.toLowerCase();
+                if (valA < valB) return pwdSortAsc ? -1 : 1;
+                if (valA > valB) return pwdSortAsc ? 1 : -1;
+                return 0;
+            });
+
             users.forEach(u => {
                 const tr = document.createElement("tr");
+                tr.className = "pwd-user-row";
+                const dropdownId = `pwd-dropdown-${btoa(u.name).replace(/=/g, '')}`;
                 tr.innerHTML = `
-                    <td data-label="Linux User" style="padding: 16px 24px;">${u.name}</td>
-                    <td data-label="Samba Password" style="padding: 16px 24px;">
-                        ${u.hasPass ? '<span style="color: var(--pf-global--success-color--100);">Set</span>' : '<span style="color: var(--pf-global--Color--200);">Not Set</span>'}
+                    <td data-label="Username" class="pwd-username-cell" style="padding: 16px 24px;">${u.name}</td>
+                    <td data-label="Samba Access" style="padding: 16px 24px;">
+                        <span class="label-pill ${u.hasPass ? 'label-green' : 'label-red'}">${u.hasPass ? 'Enabled' : 'Disabled'}</span>
                     </td>
-                    <td data-label="Action" style="padding: 16px 24px; text-align: right;" id="action-cell-${u.name}">
-                        <div style="display:inline-flex; gap:8px; flex-wrap:wrap; justify-content:flex-end;">
-                            <button class="btn btn-secondary" style="padding: 4px 12px; font-size: 13px;" onclick="promptPasswordInline('${u.name}')">
-                                ${u.hasPass ? 'Reset' : 'Set'}
+                    <td style="padding: 16px 24px; text-align: right; overflow: visible;" id="action-cell-${u.name}">
+                        <div style="position: relative; display: inline-block;">
+                            <button class="icon-btn pwd-actions-btn" aria-label="Actions" data-user="${u.name}">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+                                    <circle cx="12" cy="5" r="2"></circle><circle cx="12" cy="12" r="2"></circle><circle cx="12" cy="19" r="2"></circle>
+                                </svg>
                             </button>
+                            <div class="dropdown-menu pwd-actions-dropdown hidden" id="${dropdownId}">
+                                <button class="menu-item" onclick="document.getElementById('${dropdownId}').classList.add('hidden'); promptPasswordInline('${u.name}')">${u.hasPass ? 'Reset password' : 'Set password'}</button>
+                                ${u.hasPass ? `<div class="dropdown-divider"></div><button class="menu-item danger" onclick="document.getElementById('${dropdownId}').classList.add('hidden'); removeSmbPassword('${u.name}')">Remove password</button>` : ''}
+                            </div>
                         </div>
                     </td>
                 `;
                 tbody.appendChild(tr);
             });
+
+            // Row Actions Dropdown Logic -- scoped to .pwd-actions-btn (not the
+            // Shares table's .row-actions-btn), since the Shares table stays in
+            // the DOM behind this modal and a shared, unscoped selector would
+            // otherwise double-bind listeners onto its buttons too.
+            document.querySelectorAll('.pwd-actions-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const user = btn.getAttribute('data-user');
+                    const dropdown = document.getElementById(`pwd-dropdown-${btoa(user).replace(/=/g, '')}`);
+                    document.querySelectorAll('.pwd-actions-dropdown').forEach(d => {
+                        if (d !== dropdown) d.classList.add('hidden');
+                    });
+                    dropdown.classList.toggle('hidden');
+                });
+            });
+
+            // Re-apply the search filter if active, matching the Shares table's
+            // own "keep the filter applied after a re-render" behavior.
+            const pwdFilterEl = document.getElementById('pwd-filter');
+            const term = pwdFilterEl ? pwdFilterEl.value.toLowerCase() : '';
+            if (term) {
+                document.querySelectorAll('#users-list-body .pwd-user-row').forEach(row => {
+                    const name = row.querySelector('.pwd-username-cell').textContent.toLowerCase();
+                    row.style.display = name.includes(term) ? '' : 'none';
+                });
+            }
         }
 
         window.promptPasswordInline = function(username) {
@@ -1644,6 +1797,7 @@
             await checkSELinuxStatus();
             const statusObj = await checkService();
             updateServiceStatus(statusObj);
+            loadServiceDetails(statusObj);
             await loadData();
 
             // Modal Close (X) Buttons -- native-style dismiss, same effect as each
@@ -1665,6 +1819,15 @@
                 });
             });
 
+            // Search Filter (Manage Samba Passwords)
+            document.getElementById('pwd-filter').addEventListener('input', (e) => {
+                const term = e.target.value.toLowerCase();
+                document.querySelectorAll('#users-list-body .pwd-user-row').forEach(row => {
+                    const name = row.querySelector('.pwd-username-cell').textContent.toLowerCase();
+                    row.style.display = name.includes(term) ? '' : 'none';
+                });
+            });
+
             // Actions Menu Dropdown Logic
             const btnActions = document.getElementById('btn-actions-menu');
             const dropdownActions = document.getElementById('actions-dropdown');
@@ -1683,6 +1846,11 @@
                 if (!e.target.closest('.row-actions-btn')) {
                     document.querySelectorAll('.row-actions-dropdown').forEach(d => d.classList.add('hidden'));
                 }
+
+                // Same, for the Manage Samba Passwords table's own row menus
+                if (!e.target.closest('.pwd-actions-btn')) {
+                    document.querySelectorAll('.pwd-actions-dropdown').forEach(d => d.classList.add('hidden'));
+                }
             });
 
             // Sorting Logic
@@ -1696,6 +1864,21 @@
                         currentSortAsc = true;
                     }
                     renderTable();
+                });
+            });
+
+            // Sorting Logic (Manage Samba Passwords) -- separate state and
+            // render target from the Shares table above.
+            document.querySelectorAll('.pwd-sortable').forEach(th => {
+                th.addEventListener('click', () => {
+                    const key = th.getAttribute('data-sort');
+                    if (pwdSortKey === key) {
+                        pwdSortAsc = !pwdSortAsc;
+                    } else {
+                        pwdSortKey = key;
+                        pwdSortAsc = true;
+                    }
+                    renderUsersModal();
                 });
             });
 

@@ -164,6 +164,7 @@
            label pills so it doesn't read as another share attribute -- it's
            an actionable fix, not a descriptive tag. */
         .selinux-fix-btn { color: var(--pf-global--warning-color--100); flex-shrink: 0; }
+        .missing-dir-btn { color: var(--pf-global--danger-color--100); flex-shrink: 0; }
 
         /* Pill-shaped buttons -- confirmed against native Cockpit: "Create new
            account" and "Create new group" on the Accounts page are fully rounded */
@@ -535,6 +536,12 @@
             <div class="modal-body" id="confirm-body" style="font-size: 15px;">
                 <!-- Filled dynamically -->
             </div>
+            <div class="checkbox-group hidden" id="confirm-checkbox-wrapper" style="margin: 0 24px 24px;">
+                <label class="checkbox-item">
+                    <input type="checkbox" id="confirm-checkbox" />
+                    <span id="confirm-checkbox-label"></span>
+                </label>
+            </div>
             <div class="modal-footer">
                 <button class="btn btn-primary" id="btn-confirm-ok">Yes</button>
                 <button class="btn btn-link" id="btn-confirm-cancel">Cancel</button>
@@ -564,6 +571,14 @@
         let currentServiceName = "smb";
         let currentSortKey = "name";
         let currentSortAsc = true;
+        // Bumped every time renderTable() rebuilds the share list. The async
+        // per-row filesystem checks (missing directory, SELinux context)
+        // capture the generation active when they started; if a newer render
+        // has since happened by the time they resolve, they no-op instead of
+        // appending an icon onto a row that isn't theirs anymore (row IDs are
+        // derived from the share name, so a stale check can otherwise still
+        // find a same-ID element from a brand new render and duplicate onto it).
+        let tableRenderGeneration = 0;
         let userGroupSuggestions = []; // Flat list like ['root', 'admin', '@wheel', ...]
 
         // --- 3. MODAL & ACCESSIBILITY HELPERS ---
@@ -694,7 +709,13 @@
             }, 4000);
         }
 
-        function customConfirm(title, message, okText, isDanger = false) {
+        // checkboxConfig (optional): { label, defaultChecked }. When provided,
+        // shows a checkbox in the dialog styled like the Share modal's own
+        // checkboxes. The resolved value stays a plain boolean (confirmed or
+        // not) for backward compatibility with existing callers -- read
+        // document.getElementById('confirm-checkbox').checked afterward to
+        // get its final state.
+        function customConfirm(title, message, okText, isDanger = false, checkboxConfig = null) {
             return new Promise((resolve) => {
                 const modal = document.getElementById('confirm-modal');
                 document.getElementById('confirm-title').textContent = title;
@@ -702,12 +723,24 @@
                 const btnOk = document.getElementById('btn-confirm-ok');
                 const btnCancel = document.getElementById('btn-confirm-cancel');
                 const btnCloseX = document.getElementById('btn-confirm-close-x');
+                const checkboxWrapper = document.getElementById('confirm-checkbox-wrapper');
+                const checkboxInput = document.getElementById('confirm-checkbox');
+                const checkboxLabelEl = document.getElementById('confirm-checkbox-label');
                 
                 btnOk.textContent = okText;
                 // Destructive actions (e.g. Delete Share) get the red danger treatment,
                 // matching native Cockpit's delete-confirmation buttons.
                 btnOk.classList.toggle('btn-primary', !isDanger);
                 btnOk.classList.toggle('btn-danger', isDanger);
+
+                if (checkboxConfig) {
+                    checkboxLabelEl.textContent = checkboxConfig.label;
+                    checkboxInput.checked = checkboxConfig.defaultChecked !== false;
+                    checkboxWrapper.classList.remove('hidden');
+                } else {
+                    checkboxWrapper.classList.add('hidden');
+                    checkboxInput.checked = false;
+                }
                 
                 const cleanup = () => {
                     closeModal(modal);
@@ -901,32 +934,12 @@
         }
 
         // Classifies how a share directory's permissions should be set based
-        // on its Valid Users/Groups value. Shared by applySharePermissions()
-        // (which actually runs the commands) and describeSharePermissionPlan()
-        // (which explains them in the "create this directory?" confirmation),
-        // so the two can never drift out of sync with each other.
+        // on its Valid Users/Groups value, shared by applySharePermissions().
         function classifySharePermissionPlan(validUsersRaw) {
             const { users, groups } = parseValidUsersField(validUsersRaw);
             if (users.length === 0 && groups.length === 0) return { mode: 'open', users, groups };
             if (users.length === 0 && groups.length === 1) return { mode: 'group', users, groups };
             return { mode: 'acl', users, groups };
-        }
-
-        // Human-readable explanation of exactly what applySharePermissions()
-        // is about to do, shown in the "create this directory?" confirmation
-        // so the admin understands what access the new directory will
-        // actually have before agreeing to create it.
-        function describeSharePermissionPlan(validUsersRaw) {
-            const { mode, users, groups } = classifySharePermissionPlan(validUsersRaw);
-
-            if (mode === 'open') {
-                return `<strong>Valid Users/Groups is blank</strong>, so the new directory will be left open to everyone (<code>chmod 777</code>) to match Samba's own "any connection allowed" setting for this share.`;
-            }
-            if (mode === 'group') {
-                return `The directory's group will be set to <strong>${groups[0]}</strong>, with access restricted to the owner and that group only (<code>chmod 2770</code>). Files added later will automatically stay in that group too.`;
-            }
-            const named = [...users, ...groups.map(g => '@' + g)].map(n => `<strong>${n}</strong>`).join(', ');
-            return `Access will be locked down to just the owner (<code>chmod 770</code>), then individually granted via ACLs to: ${named}.`;
         }
 
         // Sets ownership/permissions on a newly-created share directory based on
@@ -975,6 +988,71 @@
                 // base above still applies, so fail soft rather than blocking
                 // the whole share creation over a missing setfacl.
                 return { aclWarning: true };
+            }
+        }
+
+        // Shows the "Directory Does Not Exist" confirmation and, if agreed to,
+        // creates the directory and applies permissions/SELinux exactly the
+        // same way whether that's happening during Save Share (a brand new
+        // share) or from the per-row "missing folder" icon (an existing
+        // share whose directory vanished -- e.g. deleted by hand outside this
+        // tool, or smb.conf edited directly to point somewhere new). Keeping
+        // this as one shared function guarantees both paths can never behave
+        // differently from each other. Returns true if the directory now
+        // exists and is set up; false if the user cancelled or setup failed
+        // (a toast is already shown in the failure case).
+        async function confirmAndCreateMissingDirectory(path, validUsersRaw) {
+            const createIt = await customConfirm(
+                "Directory Does Not Exist",
+                `The path <strong>${path}</strong> was not found on the filesystem. It will now be created.`,
+                "Create Directory",
+                false,
+                {
+                    label: "Include ACL permissions to allow local access for previously defined users.",
+                    defaultChecked: true
+                }
+            );
+
+            if (!createIt) return false;
+
+            const applyAcl = document.getElementById('confirm-checkbox').checked;
+            try {
+                await cockpit.spawn(['mkdir', '-p', path], {superuser: "try"});
+
+                // Left unchecked, the directory is intentionally left as
+                // mkdir created it rather than falling back to opening it
+                // up wide -- the admin is saying they'll manage
+                // permissions themselves.
+                const permResult = applyAcl ? await applySharePermissions(path, validUsersRaw) : {};
+
+                // Apply the same fix the manual "Fix SELinux" icon would --
+                // a freshly-created directory has no Samba-related SELinux
+                // context yet, so without this it would show up needing a
+                // manual fix on a share that's otherwise brand new. This
+                // runs regardless of the ACL checkbox above, since SELinux
+                // labeling and POSIX permissions are separate concerns.
+                let selinuxWarning = false;
+                if (isSELinuxEnabled) {
+                    try {
+                        await cockpit.spawn(["chcon", "-R", "-t", "samba_share_t", path], {superuser: "try"});
+                    } catch (e) {
+                        selinuxWarning = true;
+                    }
+                }
+
+                const warnings = [];
+                if (permResult.aclWarning) warnings.push("per-user ACLs could not be applied (setfacl unavailable) -- access is limited to the directory's owner and group");
+                if (selinuxWarning) warnings.push("the SELinux context could not be set automatically -- use the warning icon next to the path to fix it manually");
+
+                if (warnings.length > 0) {
+                    showToast("Directory created, but " + warnings.join('; and ') + ".", "error");
+                } else {
+                    showToast("Directory created successfully.", "success");
+                }
+                return true;
+            } catch (e) {
+                showToast("Failed setting up directory: " + e.message, "error");
+                return false;
             }
         }
 
@@ -1126,6 +1204,8 @@
         }
 
         function renderTable() {
+            tableRenderGeneration++;
+            const myGeneration = tableRenderGeneration;
             const tbody = document.getElementById("shares-list");
             tbody.innerHTML = '';
 
@@ -1203,33 +1283,64 @@
                 `;
                 tbody.appendChild(tr);
 
-                // Safe SELinux Checker (Strictly ignores root '/')
-                if (isSELinuxEnabled && config.path && config.path.trim() !== '/' && config.path.trim() !== '') {
-                    cockpit.spawn(["ls", "-Zd", config.path], {superuser: "try"}).then(out => {
-                        if (!out.includes("samba_share_t") && !out.includes("public_content_t")) {
-                            const tdContent = document.getElementById(`path-content-${btoa(name).replace(/=/g, '')}`);
-                            const fixBtn = document.createElement("button");
-                            fixBtn.className = "icon-btn selinux-fix-btn";
-                            fixBtn.title = "Click to fix SELinux";
-                            fixBtn.setAttribute("aria-label", "SELinux context needs fixing for this share -- click to fix");
-                            fixBtn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>';
-                            fixBtn.onclick = async () => {
-                                const doFix = await customConfirm(
-                                    "Fix SELinux Context",
-                                    `SELinux is currently blocking Samba from accessing <strong>${config.path}</strong> because this directory doesn't have the correct security context.<br><br>Fixing this will run <code>chcon -R -t samba_share_t</code> on the directory (recursively) -- the standard label Samba needs in order to read and write files here while SELinux is enforcing.`,
-                                    "Fix SELinux"
-                                );
-                                if (!doFix) return;
+                // Missing Directory Checker -- catches a share whose backing
+                // folder has since vanished (deleted by hand outside this
+                // tool, or smb.conf edited directly to point somewhere that
+                // was never created). Runs regardless of SELinux status,
+                // since a missing directory breaks the share either way.
+                if (config.path && config.path.trim() !== '') {
+                    const sharePath = config.path;
+                    cockpit.spawn(["test", "-d", sharePath], {superuser: "try"}).then(() => {
+                        if (myGeneration !== tableRenderGeneration) return; // a newer render has since happened
+                        // Directory exists -- SELinux context only matters once
+                        // there's actually something there to check.
+                        if (isSELinuxEnabled && sharePath.trim() !== '/') {
+                            cockpit.spawn(["ls", "-Zd", sharePath], {superuser: "try"}).then(out => {
+                                if (myGeneration !== tableRenderGeneration) return;
+                                if (!out.includes("samba_share_t") && !out.includes("public_content_t")) {
+                                    const tdContent = document.getElementById(`path-content-${btoa(name).replace(/=/g, '')}`);
+                                    const fixBtn = document.createElement("button");
+                                    fixBtn.className = "icon-btn selinux-fix-btn";
+                                    fixBtn.title = "Click to fix SELinux";
+                                    fixBtn.setAttribute("aria-label", "SELinux context needs fixing for this share -- click to fix");
+                                    fixBtn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>';
+                                    fixBtn.onclick = async () => {
+                                        const doFix = await customConfirm(
+                                            "Fix SELinux Context",
+                                            `SELinux is currently blocking Samba from accessing <strong>${sharePath}</strong> because this directory doesn't have the correct security context.<br><br>Fixing this will run <code>chcon -R -t samba_share_t</code> on the directory (recursively) -- the standard label Samba needs in order to read and write files here while SELinux is enforcing.`,
+                                            "Fix SELinux"
+                                        );
+                                        if (!doFix) return;
 
-                                try {
-                                    await cockpit.spawn(["chcon", "-R", "-t", "samba_share_t", config.path], {superuser: "try"});
-                                    showToast("SELinux context applied to " + config.path, "success");
-                                    fixBtn.remove();
-                                } catch(e) { showToast("Failed to set SELinux: " + e.message, "error"); }
-                            };
-                            if (tdContent) tdContent.appendChild(fixBtn);
+                                        try {
+                                            await cockpit.spawn(["chcon", "-R", "-t", "samba_share_t", sharePath], {superuser: "try"});
+                                            showToast("SELinux context applied to " + sharePath, "success");
+                                            fixBtn.remove();
+                                        } catch(e) { showToast("Failed to set SELinux: " + e.message, "error"); }
+                                    };
+                                    if (tdContent) tdContent.appendChild(fixBtn);
+                                }
+                            }).catch(e => { /* Ignore */ });
                         }
-                    }).catch(e => { /* Ignore */ });
+                    }).catch(() => {
+                        if (myGeneration !== tableRenderGeneration) return;
+                        // Directory does not exist -- offer to recreate it using
+                        // the exact same flow as when a share is first created.
+                        const tdContent = document.getElementById(`path-content-${btoa(name).replace(/=/g, '')}`);
+                        const missingBtn = document.createElement("button");
+                        missingBtn.className = "icon-btn missing-dir-btn";
+                        missingBtn.title = "Fix missing folder";
+                        missingBtn.setAttribute("aria-label", `The folder for this share is missing -- click to recreate it`);
+                        missingBtn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>';
+                        missingBtn.onclick = async () => {
+                            const created = await confirmAndCreateMissingDirectory(sharePath, config['valid users'] || '');
+                            // A full reload rather than just removing this button --
+                            // that way the SELinux checker above also gets a chance
+                            // to run against the now-real directory in the same pass.
+                            if (created) await loadData();
+                        };
+                        if (tdContent) tdContent.appendChild(missingBtn);
+                    });
                 }
             }
 
@@ -1679,6 +1790,20 @@
                 } else if (name.toLowerCase() === 'global') {
                     setFieldError(nameInput, nameError, 'Cannot name a share "global" -- that name is reserved for global settings.');
                     hasError = true;
+                } else if (!nameInput.disabled) {
+                    // The name field is only editable when creating a new share
+                    // (it's disabled while editing an existing one, where the
+                    // name can't change) -- so a collision can only happen here.
+                    // Compared case-insensitively: Samba/SMB clients treat share
+                    // names case-insensitively even though our own config parser
+                    // stores them as ordinary, case-sensitive object keys, so
+                    // "Public" and "public" would be a real conflict to Samba
+                    // even though they're different keys to us.
+                    const existingMatch = Object.keys(sharesConf).find(existing => existing.toLowerCase() === name.toLowerCase());
+                    if (existingMatch) {
+                        setFieldError(nameInput, nameError, `A share named "${existingMatch}" already exists. Edit or delete that share instead, or choose a different name.`);
+                        hasError = true;
+                    }
                 }
                 if (!path) {
                     setFieldError(pathInput, pathError, "Absolute path is required.");
@@ -1705,46 +1830,8 @@
                 }
 
                 if (!dirExists) {
-                    const createIt = await customConfirm(
-                        "Directory Does Not Exist",
-                        `The path <strong>${path}</strong> was not found on the filesystem.<br><br>Would you like to automatically create this directory?<br><br>${describeSharePermissionPlan(validUsersRaw)}`,
-                        "Create Directory"
-                    );
-                    
-                    if (createIt) {
-                        try {
-                            await cockpit.spawn(['mkdir', '-p', path], {superuser: "try"});
-                            const permResult = await applySharePermissions(path, validUsersRaw);
-
-                            // Apply the same fix the manual "Fix SELinux" icon would --
-                            // a freshly-created directory has no Samba-related SELinux
-                            // context yet, so without this it would show up needing a
-                            // manual fix on a share that's otherwise brand new.
-                            let selinuxWarning = false;
-                            if (isSELinuxEnabled) {
-                                try {
-                                    await cockpit.spawn(["chcon", "-R", "-t", "samba_share_t", path], {superuser: "try"});
-                                } catch (e) {
-                                    selinuxWarning = true;
-                                }
-                            }
-
-                            const warnings = [];
-                            if (permResult.aclWarning) warnings.push("per-user ACLs could not be applied (setfacl unavailable) -- access is limited to the directory's owner and group");
-                            if (selinuxWarning) warnings.push("the SELinux context could not be set automatically -- use the warning icon next to the path to fix it manually");
-
-                            if (warnings.length > 0) {
-                                showToast("Directory created, but " + warnings.join('; and ') + ".", "error");
-                            } else {
-                                showToast("Directory created successfully.", "success");
-                            }
-                        } catch (e) {
-                            showToast("Failed setting up directory: " + e.message, "error");
-                            return; // Stop saving if dir creation fails
-                        }
-                    } else {
-                        return; // User clicked Cancel
-                    }
+                    const created = await confirmAndCreateMissingDirectory(path, validUsersRaw);
+                    if (!created) return; // User cancelled, or setup failed (toast already shown)
                 }
 
                 // Merge onto the share's existing config rather than replacing it

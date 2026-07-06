@@ -69,7 +69,6 @@
             
             --pf-global--BackgroundColor--100: #ffffff;
             --pf-global--BackgroundColor--200: #f0f0f0;
-            --pf-global--BackgroundColor--300: #fafafa;
             --pf-global--BackgroundColor--hover: #f8f8f8;
             
             --pf-global--Color--100: #151515;
@@ -96,7 +95,6 @@
             --pf-global--primary-color--200: #73bcf7 !important;
             --pf-global--BackgroundColor--100: #1b1d21 !important;
             --pf-global--BackgroundColor--200: #0f1014 !important;
-            --pf-global--BackgroundColor--300: #151619 !important;
             --pf-global--BackgroundColor--hover: #26292d !important;
             --pf-global--Color--100: #e0e0e0 !important;
             --pf-global--Color--200: #a3a3a3 !important;
@@ -131,9 +129,6 @@
             display: flex; align-items: center; justify-content: space-between; font-size: 16px;
             border-top-left-radius: var(--radius-md); border-top-right-radius: var(--radius-md);
         }
-        .card-body { padding: 24px; }
-        .toolbar { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
-
         /* Dropdown Menu */
         .dropdown-menu { position: absolute; top: 100%; right: 0; margin-top: 8px; background: var(--pf-global--BackgroundColor--100); border: 1px solid var(--pf-global--BorderColor--100); border-radius: var(--radius-md); box-shadow: 0 4px 12px rgba(0,0,0,0.15); width: 220px; z-index: 1000; overflow: hidden; }
         .menu-item { display: block; width: 100%; padding: 12px 16px; text-align: left; background: none; border: none; font-size: 14px; font-family: var(--pf-global--FontFamily--sans-serif); color: var(--pf-global--Color--100); cursor: pointer; transition: background 0.1s; }
@@ -142,9 +137,33 @@
         .menu-item.danger:hover { background-color: rgba(201, 25, 11, 0.05); }
         .dropdown-divider { height: 1px; background: var(--pf-global--BorderColor--100); margin: 4px 0; }
 
+        /* Valid Users/Groups suggestion dropdown -- a native <datalist> can only
+           match against the *entire* field value, so it breaks the moment a
+           second comma-separated entry is typed. This is a small self-built
+           replacement that filters against just the entry currently being
+           typed, positioned under the field rather than off to one side. */
+        .combobox-wrapper { position: relative; }
+        .combobox-wrapper .form-control { padding-right: 40px; }
+        .suggestion-toggle-btn {
+            position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+            color: var(--pf-global--Color--200);
+        }
+        .suggestion-dropdown {
+            position: absolute; top: 100%; left: 0; right: 0; margin-top: 4px;
+            background: var(--pf-global--BackgroundColor--100); border: 1px solid var(--pf-global--BorderColor--100);
+            border-radius: var(--radius-md); box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            max-height: 220px; overflow-y: auto; z-index: 1000;
+        }
+        .suggestion-item { display: block; width: 100%; padding: 8px 16px; text-align: left; background: none; border: none; font-size: 14px; font-family: var(--pf-global--FontFamily--sans-serif); color: var(--pf-global--Color--100); cursor: pointer; }
+        .suggestion-item:hover, .suggestion-item.highlighted { background-color: var(--pf-global--BackgroundColor--hover); }
+
         /* Icon Button */
         .icon-btn { background: transparent; border: none; cursor: pointer; color: var(--pf-global--Color--100); padding: 6px; border-radius: 4px; display: flex; align-items: center; justify-content: center; transition: background 0.2s; }
         .icon-btn:hover { background-color: var(--pf-global--BackgroundColor--hover); }
+        /* A small warning-triangle indicator, distinct from the Attributes
+           label pills so it doesn't read as another share attribute -- it's
+           an actionable fix, not a descriptive tag. */
+        .selinux-fix-btn { color: var(--pf-global--warning-color--100); flex-shrink: 0; }
 
         /* Pill-shaped buttons -- confirmed against native Cockpit: "Create new
            account" and "Create new group" on the Accounts page are fully rounded */
@@ -159,12 +178,8 @@
         .btn-primary:hover:not(:disabled) { background-color: var(--pf-global--primary-color--200); }
         .btn-secondary { background-color: transparent; color: var(--pf-global--primary-color--100); border-color: var(--pf-global--primary-color--100); }
         .btn-secondary:hover:not(:disabled) { background-color: rgba(43, 154, 243, 0.06); }
-        .btn-success { background-color: var(--pf-global--success-color--100); color: #ffffff !important; }
-        .btn-success:hover:not(:disabled) { background-color: #2b6624; }
         .btn-danger { background-color: var(--pf-global--danger-color--100); color: #ffffff !important; }
         .btn-danger:hover:not(:disabled) { background-color: #a30000; }
-        .btn-warning { background-color: var(--pf-global--warning-color--100); color: #151515 !important; border: 1px solid #c58c00; }
-        .btn-warning:hover:not(:disabled) { background-color: #c58c00; }
         /* Cancel/dismiss actions in native modals render as a plain text link, not a boxed button */
         .btn-link { color: var(--pf-global--primary-color--100); background: transparent; padding: 6px 8px; }
         .btn-link:hover:not(:disabled) { background-color: var(--pf-global--BackgroundColor--hover); text-decoration: none; }
@@ -280,7 +295,6 @@
             .card-header { flex-direction: column; align-items: flex-start; gap: 16px; }
             .header-actions { flex-direction: column; align-items: stretch; width: 100%; gap: 12px; margin-left: 0; }
             .vertical-divider { display: none; }
-            .toolbar { flex-direction: column; align-items: stretch; width: 100%; gap: 12px; }
             .search-box { width: 100%; max-width: 100%; margin-left: 0; }
             .btn { width: 100%; justify-content: center; }
             
@@ -377,7 +391,7 @@
             </div>
         </div>
         <div class="table-responsive">
-            <table id="shares-table">
+            <table>
                 <thead>
                     <tr>
                         <th class="sortable" data-sort="name">Share Name <svg class="sort-icon active" viewBox="0 0 24 24"><path d="M12 5l-7 7h14l-7-7z" /></svg></th>
@@ -422,9 +436,14 @@
                 </div>
                 <div class="form-group">
                     <label class="form-label" for="share-users">Valid Users/Groups</label>
-                    <input class="form-control" type="text" id="share-users" placeholder="e.g., @users, admin, john" list="user-group-datalist" autocomplete="off" />
-                    <datalist id="user-group-datalist"></datalist>
-                    <div class="help-text">Leave blank for all users. Use @ for groups. Start typing for suggestions from this system's users/groups.</div>
+                    <div class="combobox-wrapper">
+                        <input class="form-control" type="text" id="share-users" placeholder="e.g., @users, admin, john" autocomplete="off" role="combobox" aria-expanded="false" aria-autocomplete="list" aria-controls="user-group-suggestions" />
+                        <button type="button" class="icon-btn suggestion-toggle-btn" id="btn-toggle-user-suggestions" aria-label="Show user/group suggestions" aria-expanded="false" aria-controls="user-group-suggestions">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                        </button>
+                        <div class="suggestion-dropdown hidden" id="user-group-suggestions" role="listbox"></div>
+                    </div>
+                    <div class="help-text">Use a comma to separate entries. Leave blank for all users. Use @ for groups. Start typing for suggestions from this system's users/groups.</div>
                 </div>
                 
                 <div class="checkbox-group">
@@ -545,6 +564,7 @@
         let currentServiceName = "smb";
         let currentSortKey = "name";
         let currentSortAsc = true;
+        let userGroupSuggestions = []; // Flat list like ['root', 'admin', '@wheel', ...]
 
         // --- 3. MODAL & ACCESSIBILITY HELPERS ---
         // Tracks, per open dialog, which element had focus before it opened so
@@ -708,16 +728,38 @@
         }
 
         // --- 5. BACKEND LOGIC ---
-        async function checkService() {
-            let serviceName = "smb"; 
-            try { await cockpit.spawn(["systemctl", "status", "smb"], { superuser: "try" }); } 
-            catch (e) {
-                if (e.message && e.message.includes("could not be found")) {
-                    try { await cockpit.spawn(["systemctl", "status", "smbd"], { superuser: "try" }); serviceName = "smbd"; } 
-                    catch (e2) { return { status: "not installed", name: null }; }
-                }
+        // Reports whether a systemd unit is known to systemd at all, independent
+        // of whether it's currently running. Unlike "systemctl status <unit>"
+        // (which exits non-zero both when a unit doesn't exist AND when it's
+        // simply stopped, making the two cases hard to tell apart from an exit
+        // code or locale-dependent error text alone), "systemctl show" always
+        // succeeds and reports LoadState=not-found only when the unit is
+        // genuinely absent.
+        async function unitLoadState(serviceName) {
+            try {
+                const out = await cockpit.spawn(
+                    ["systemctl", "show", serviceName, "--property=LoadState", "--value"],
+                    { superuser: "try" }
+                );
+                return out.trim();
+            } catch (e) {
+                return "not-found";
             }
-            
+        }
+
+        async function checkService() {
+            let serviceName = "smb";
+            let loadState = await unitLoadState(serviceName);
+
+            if (loadState.includes("not-found")) {
+                serviceName = "smbd";
+                loadState = await unitLoadState(serviceName);
+            }
+
+            if (loadState.includes("not-found")) {
+                return { status: "not installed", name: null };
+            }
+
             currentServiceName = serviceName;
 
             try {
@@ -820,6 +862,93 @@
             }
         }
 
+        // Splits a "Valid Users/Groups" field value into trimmed, non-empty
+        // comma-separated tokens (shared by the parsing and dedupe helpers
+        // below, so both agree on exactly what counts as one entry).
+        function tokenizeValidUsersField(raw) {
+            return raw.split(',').map(t => t.trim()).filter(Boolean);
+        }
+
+        // Splits the field into individual usernames and group names (a
+        // leading "@" marks a group, matching Samba's own "valid users" syntax).
+        function parseValidUsersField(raw) {
+            const users = [];
+            const groups = [];
+            tokenizeValidUsersField(raw).forEach(t => {
+                if (t.startsWith('@')) {
+                    const g = t.slice(1).trim();
+                    if (g) groups.push(g);
+                } else {
+                    users.push(t);
+                }
+            });
+            return { users, groups };
+        }
+
+        // Removes duplicate entries (exact match, since Unix user/group names
+        // are case-sensitive) while preserving the order they were first
+        // typed in, so "admin, @staff, admin" becomes "admin, @staff".
+        function dedupeValidUsersField(raw) {
+            const seen = new Set();
+            const result = [];
+            tokenizeValidUsersField(raw).forEach(token => {
+                if (!seen.has(token)) {
+                    seen.add(token);
+                    result.push(token);
+                }
+            });
+            return result.join(', ');
+        }
+
+        // Sets ownership/permissions on a newly-created share directory based on
+        // who is actually allowed to connect, rather than always leaving it
+        // wide open. Returns { aclWarning: true } if the directory is usable but
+        // per-user ACLs specifically couldn't be applied (e.g. no ACL support on
+        // this filesystem), so the caller can surface that distinctly.
+        async function applySharePermissions(path, validUsersRaw) {
+            const { users, groups } = parseValidUsersField(validUsersRaw);
+
+            if (users.length === 0 && groups.length === 0) {
+                // Blank field = Samba allows any connection through (including
+                // guest, depending on config) -- there's no specific restriction
+                // to enforce, so leave the directory open rather than guessing.
+                await cockpit.spawn(['chmod', '777', path], { superuser: "try" });
+                return {};
+            }
+
+            if (users.length === 0 && groups.length === 1) {
+                // A single group maps directly to a plain chgrp. The setgid bit
+                // (leading "2") makes files later created inside the share
+                // inherit this group automatically, so access stays correct as
+                // the share fills up rather than just at creation time.
+                await cockpit.spawn(['chgrp', groups[0], path], { superuser: "try" });
+                await cockpit.spawn(['chmod', '2770', path], { superuser: "try" });
+                return {};
+            }
+
+            // Individual users, and/or more than one group, can't be expressed
+            // with a single owner/group -- a directory only has one of each.
+            // Lock the directory down to owner+group, then grant every named
+            // user/group explicit access via POSIX ACLs, including "default"
+            // entries so files created later inside the share inherit the same
+            // access rather than only the directory itself.
+            await cockpit.spawn(['chmod', '770', path], { superuser: "try" });
+
+            const aclEntries = [];
+            users.forEach(u => { aclEntries.push(`u:${u}:rwx`, `d:u:${u}:rwx`); });
+            groups.forEach(g => { aclEntries.push(`g:${g}:rwx`, `d:g:${g}:rwx`); });
+
+            try {
+                await cockpit.spawn(['setfacl', '-m', aclEntries.join(','), path], { superuser: "try" });
+                return {};
+            } catch (e) {
+                // Not every filesystem supports POSIX ACLs -- the chmod 770
+                // base above still applies, so fail soft rather than blocking
+                // the whole share creation over a missing setfacl.
+                return { aclWarning: true };
+            }
+        }
+
         async function loadSystemUsers() {
             try {
                 const passwd = await cockpit.spawn(["cat", "/etc/passwd"], { superuser: "try" });
@@ -848,42 +977,79 @@
             } catch (e) { return []; }
         }
 
-        // Populates the "Valid Users/Groups" datalist from this system's real
-        // accounts and groups, so typing offers autocomplete suggestions instead
-        // of relying on the admin to spell names correctly from memory.
-        async function loadUserGroupSuggestions() {
-            const datalist = document.getElementById('user-group-datalist');
-            if (!datalist) return;
-            const esc = (s) => s.replace(/"/g, '&quot;');
-            const suggestions = [];
+        // Populates the in-memory "Valid Users/Groups" suggestion list from this
+        // system's real accounts and groups, so typing offers autocomplete
+        // suggestions instead of relying on the admin to spell names correctly
+        // from memory. Rendered by the custom dropdown in wireShareUsersAutocomplete()
+        // rather than a native <datalist>, which can only match against the
+        // entire field value and breaks once a second comma-separated entry
+        // is being typed.
+        async function loadUserGroupSuggestions() {            // systemd's DynamicUser= feature (which Cockpit itself uses for
+            // per-session helpers like "cockpit-wsinstance-*") allocates UIDs/GIDs
+            // from this fixed range. Those accounts/groups are ephemeral and tied
+            // to a running session, not something you'd ever pick for a Samba
+            // share, so they're excluded outright regardless of membership.
+            const DYNAMIC_ID_MIN = 61184;
+            const DYNAMIC_ID_MAX = 65519;
+            const isDynamicId = (id) => id >= DYNAMIC_ID_MIN && id <= DYNAMIC_ID_MAX;
+            const NOISE_GROUPS = new Set(['nobody', 'nogroup']);
+            // Classic admin/sudo groups vary by distro (wheel vs. sudo) and don't
+            // always carry a supplementary-member record that reflects how a user
+            // actually got their access -- so these are offered unconditionally
+            // rather than relying on membership data alone.
+            const ALWAYS_INCLUDE_GROUPS = new Set(['wheel', 'sudo', 'admin', 'adm']);
 
+            const userSuggestions = [];
+            const realUsernames = new Set();
+            const realUserGids = new Set();
             try {
                 const passwdOut = await cockpit.spawn(['getent', 'passwd']);
                 passwdOut.trim().split('\n').forEach(line => {
                     if (!line) return;
                     const parts = line.split(':');
                     if (parts.length < 7) return;
+                    const name = parts[0];
                     const uid = parseInt(parts[2], 10);
+                    const gid = parseInt(parts[3], 10);
                     const shell = parts[6];
-                    // Keep root and regular login users; skip system/service accounts.
-                    if ((uid === 0 || uid >= 1000) && !shell.includes('nologin') && !shell.includes('false')) {
-                        suggestions.push(parts[0]);
+                    // Keep root and regular login users; skip system/service
+                    // accounts and Cockpit/systemd's own dynamic session users.
+                    if ((uid === 0 || uid >= 1000) && !isDynamicId(uid) && !shell.includes('nologin') && !shell.includes('false')) {
+                        userSuggestions.push(name);
+                        realUsernames.add(name);
+                        realUserGids.add(gid);
                     }
                 });
             } catch (e) { /* getent unavailable (e.g. preview mode) -- ignore */ }
 
+            const groupSuggestions = [];
             try {
                 const groupOut = await cockpit.spawn(['getent', 'group']);
                 groupOut.trim().split('\n').forEach(line => {
                     if (!line) return;
                     const parts = line.split(':');
                     if (parts.length < 3) return;
+                    const name = parts[0];
                     const gid = parseInt(parts[2], 10);
-                    if (gid === 0 || gid >= 1000) suggestions.push('@' + parts[0]);
+                    const members = parts[3] ? parts[3].split(',').filter(Boolean) : [];
+
+                    // Ephemeral/junk groups are excluded outright, no matter who's
+                    // "in" them. Everything else is included if it's tied to a real
+                    // login user (as a member or primary group) or is one of the
+                    // well-known admin groups that's always worth offering. This
+                    // keeps service-only groups (rtkit, pipewire, usbmuxd, ...) out
+                    // without depending on a numeric GID cutoff, which doesn't exist
+                    // for groups the way it does for users.
+                    if (isDynamicId(gid) || NOISE_GROUPS.has(name)) return;
+                    const hasRealMember = members.some(m => realUsernames.has(m));
+                    const isPrimaryForRealUser = realUserGids.has(gid);
+                    if (hasRealMember || isPrimaryForRealUser || ALWAYS_INCLUDE_GROUPS.has(name)) {
+                        groupSuggestions.push('@' + name);
+                    }
                 });
             } catch (e) { /* ignore */ }
 
-            datalist.innerHTML = suggestions.map(s => `<option value="${esc(s)}"></option>`).join('');
+            userGroupSuggestions = [...userSuggestions, ...groupSuggestions];
         }
 
         window.setSmbPassword = async function(user) {
@@ -1014,10 +1180,18 @@
                         if (!out.includes("samba_share_t") && !out.includes("public_content_t")) {
                             const tdContent = document.getElementById(`path-content-${btoa(name).replace(/=/g, '')}`);
                             const fixBtn = document.createElement("button");
-                            fixBtn.className = "btn btn-warning";
-                            fixBtn.style.padding = "2px 8px"; fixBtn.style.fontSize = "11px";
-                            fixBtn.textContent = "Fix SELinux";
+                            fixBtn.className = "icon-btn selinux-fix-btn";
+                            fixBtn.title = "Click to fix SELinux";
+                            fixBtn.setAttribute("aria-label", "SELinux context needs fixing for this share -- click to fix");
+                            fixBtn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>';
                             fixBtn.onclick = async () => {
+                                const doFix = await customConfirm(
+                                    "Fix SELinux Context",
+                                    `SELinux is currently blocking Samba from accessing <strong>${config.path}</strong> because this directory doesn't have the correct security context.<br><br>Fixing this will run <code>chcon -R -t samba_share_t</code> on the directory (recursively) -- the standard label Samba needs in order to read and write files here while SELinux is enforcing.`,
+                                    "Fix SELinux"
+                                );
+                                if (!doFix) return;
+
                                 try {
                                     await cockpit.spawn(["chcon", "-R", "-t", "samba_share_t", config.path], {superuser: "try"});
                                     showToast("SELinux context applied to " + config.path, "success");
@@ -1131,6 +1305,164 @@
             document.getElementById(`new-pwd-${username}`).focus();
         };
 
+        // Drives the Valid Users/Groups suggestion dropdown. Unlike a native
+        // <datalist> (which matches against the *entire* field value), this
+        // filters against only the entry currently being typed -- whatever
+        // comes after the last comma -- so suggestions keep working for a
+        // second, third, etc. entry, and selecting one appends ", " so the
+        // user can immediately continue typing the next entry. A toggle
+        // button next to the field also opens the full, unfiltered list for
+        // browsing without needing to type anything first.
+        function wireShareUsersAutocomplete() {
+            const input = document.getElementById('share-users');
+            const dropdown = document.getElementById('user-group-suggestions');
+            const toggleBtn = document.getElementById('btn-toggle-user-suggestions');
+            let highlightedIndex = -1;
+            // Selecting a suggestion (or opening the full list via the toggle
+            // button) re-focuses the input for continued typing, but that
+            // re-focus can itself fire a genuine "focus" event (e.g. clicking
+            // a button blurs the input first, so focusing it back afterward is
+            // a real transition) -- which would otherwise immediately
+            // overwrite/reopen the dropdown right after we just set it. This
+            // flag makes that one specific focus event a no-op without
+            // affecting any later, real focus event.
+            let suppressNextFocusRender = false;
+            // A blur schedules a delayed hide as a safety net (see below). If
+            // focus returns to the input before that fires -- e.g. the user
+            // starts typing again right away -- the stale timeout must be
+            // cancelled, or it'll yank the dropdown closed moments after
+            // typing legitimately reopened it.
+            let blurHideTimeout = null;
+
+            const escapeHtml = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+            function getCurrentSegment() {
+                const value = input.value;
+                const lastComma = value.lastIndexOf(',');
+                return {
+                    prefix: lastComma === -1 ? '' : value.slice(0, lastComma + 1) + ' ',
+                    segment: (lastComma === -1 ? value : value.slice(lastComma + 1)).trim()
+                };
+            }
+
+            function updateHighlight() {
+                const items = dropdown.querySelectorAll('.suggestion-item');
+                items.forEach((el, i) => el.classList.toggle('highlighted', i === highlightedIndex));
+                if (items[highlightedIndex]) items[highlightedIndex].scrollIntoView({ block: 'nearest' });
+            }
+
+            function buildDropdown(matches) {
+                highlightedIndex = -1;
+                if (matches.length === 0) {
+                    dropdown.classList.add('hidden');
+                    dropdown.innerHTML = '';
+                    input.setAttribute('aria-expanded', 'false');
+                    toggleBtn.setAttribute('aria-expanded', 'false');
+                    return;
+                }
+                dropdown.innerHTML = matches.map(m => `<button type="button" class="suggestion-item" role="option" data-value="${escapeHtml(m)}">${escapeHtml(m)}</button>`).join('');
+                dropdown.classList.remove('hidden');
+                input.setAttribute('aria-expanded', 'true');
+                toggleBtn.setAttribute('aria-expanded', 'true');
+            }
+
+            // Filtered by whatever's currently being typed (used while typing).
+            function render() {
+                const { segment } = getCurrentSegment();
+                const lower = segment.toLowerCase();
+                buildDropdown(userGroupSuggestions.filter(s => s.toLowerCase().includes(lower)).slice(0, 15));
+            }
+
+            // The full, unfiltered list (used by the picker toggle button).
+            function renderAll() {
+                buildDropdown(userGroupSuggestions.slice(0, 15));
+            }
+
+            function closeDropdown() {
+                dropdown.classList.add('hidden');
+                dropdown.innerHTML = '';
+                input.setAttribute('aria-expanded', 'false');
+                toggleBtn.setAttribute('aria-expanded', 'false');
+            }
+
+            function refocusInputWithoutReopening() {
+                suppressNextFocusRender = true;
+                input.focus();
+                // Safety net: if focus() turned out to be a no-op (input was
+                // already focused, so no "focus" event fires to consume the
+                // flag), don't leave it stuck suppressing some later, real
+                // focus event.
+                setTimeout(() => { suppressNextFocusRender = false; }, 0);
+            }
+
+            function applySuggestion(value) {
+                const { prefix } = getCurrentSegment();
+                input.value = prefix + value + ', ';
+                closeDropdown();
+                refocusInputWithoutReopening();
+                input.setSelectionRange(input.value.length, input.value.length);
+            }
+
+            input.addEventListener('input', () => {
+                if (blurHideTimeout) { clearTimeout(blurHideTimeout); blurHideTimeout = null; }
+                render();
+            });
+            input.addEventListener('focus', () => {
+                if (blurHideTimeout) { clearTimeout(blurHideTimeout); blurHideTimeout = null; }
+                if (suppressNextFocusRender) {
+                    suppressNextFocusRender = false;
+                    return;
+                }
+                render();
+            });
+            input.addEventListener('blur', () => {
+                // Delayed so a click on a suggestion (or the toggle button)
+                // registers before the list disappears -- a blur fires before
+                // that click's own event does.
+                blurHideTimeout = setTimeout(() => {
+                    closeDropdown();
+                    blurHideTimeout = null;
+                }, 150);
+            });
+
+            dropdown.addEventListener('click', (e) => {
+                const btn = e.target.closest('.suggestion-item');
+                if (btn) applySuggestion(btn.dataset.value);
+            });
+
+            toggleBtn.addEventListener('click', () => {
+                if (!dropdown.classList.contains('hidden')) {
+                    closeDropdown();
+                    return;
+                }
+                renderAll();
+                refocusInputWithoutReopening();
+            });
+
+            input.addEventListener('keydown', (e) => {
+                const items = dropdown.querySelectorAll('.suggestion-item');
+                if (dropdown.classList.contains('hidden') || items.length === 0) return;
+
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    highlightedIndex = Math.min(highlightedIndex + 1, items.length - 1);
+                    updateHighlight();
+                } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    highlightedIndex = Math.max(highlightedIndex - 1, 0);
+                    updateHighlight();
+                } else if (e.key === 'Enter') {
+                    if (highlightedIndex >= 0 && items[highlightedIndex]) {
+                        e.preventDefault();
+                        applySuggestion(items[highlightedIndex].dataset.value);
+                    }
+                } else if (e.key === 'Escape') {
+                    closeDropdown();
+                    highlightedIndex = -1;
+                }
+            });
+        }
+
         function openShareModal(name = '', config = {}) {
             document.getElementById('share-name').value = name;
             document.getElementById('share-path').value = config.path || '';
@@ -1146,6 +1478,8 @@
 
             clearFieldError(document.getElementById('share-name'), document.getElementById('share-name-error'));
             clearFieldError(document.getElementById('share-path'), document.getElementById('share-path-error'));
+            document.getElementById('user-group-suggestions').classList.add('hidden');
+            document.getElementById('btn-toggle-user-suggestions').setAttribute('aria-expanded', 'false');
             
             openModal(document.getElementById('share-modal'));
         }
@@ -1322,6 +1656,12 @@
                     return;
                 }
 
+                // Captured once (and de-duplicated) so directory permissions
+                // and the saved config are always based on the exact same,
+                // clean value -- e.g. "admin, admin, @staff" is saved as just
+                // "admin, @staff".
+                const validUsersRaw = dedupeValidUsersField(document.getElementById('share-users').value.trim());
+
                 // Directory Auto-Detect & Creation Logic
                 let dirExists = true;
                 try {
@@ -1340,8 +1680,30 @@
                     if (createIt) {
                         try {
                             await cockpit.spawn(['mkdir', '-p', path], {superuser: "try"});
-                            await cockpit.spawn(['chmod', '777', path], {superuser: "try"});
-                            showToast("Directory created successfully.", "success");
+                            const permResult = await applySharePermissions(path, validUsersRaw);
+
+                            // Apply the same fix the manual "Fix SELinux" icon would --
+                            // a freshly-created directory has no Samba-related SELinux
+                            // context yet, so without this it would show up needing a
+                            // manual fix on a share that's otherwise brand new.
+                            let selinuxWarning = false;
+                            if (isSELinuxEnabled) {
+                                try {
+                                    await cockpit.spawn(["chcon", "-R", "-t", "samba_share_t", path], {superuser: "try"});
+                                } catch (e) {
+                                    selinuxWarning = true;
+                                }
+                            }
+
+                            const warnings = [];
+                            if (permResult.aclWarning) warnings.push("per-user ACLs could not be applied (setfacl unavailable) -- access is limited to the directory's owner and group");
+                            if (selinuxWarning) warnings.push("the SELinux context could not be set automatically -- use the warning icon next to the path to fix it manually");
+
+                            if (warnings.length > 0) {
+                                showToast("Directory created, but " + warnings.join('; and ') + ".", "error");
+                            } else {
+                                showToast("Directory created successfully.", "success");
+                            }
                         } catch (e) {
                             showToast("Failed setting up directory: " + e.message, "error");
                             return; // Stop saving if dir creation fails
@@ -1351,7 +1713,13 @@
                     }
                 }
 
+                // Merge onto the share's existing config rather than replacing it
+                // outright -- this form only exposes a handful of common fields,
+                // and a full replace would silently discard any directive a share
+                // was hand-configured with (create mask, veto files, force group,
+                // hosts allow, etc.) the moment someone edits an unrelated field.
                 const config = {
+                    ...(sharesConf[name] || {}),
                     path: path,
                     comment: document.getElementById('share-desc').value,
                     'read only': document.getElementById('share-readonly').checked ? 'yes' : 'no',
@@ -1359,8 +1727,11 @@
                     'guest ok': document.getElementById('share-guest').checked ? 'yes' : 'no'
                 };
 
-                const validUsers = document.getElementById('share-users').value.trim();
-                if (validUsers) config['valid users'] = validUsers;
+                if (validUsersRaw) {
+                    config['valid users'] = validUsersRaw;
+                } else {
+                    delete config['valid users'];
+                }
 
                 sharesConf[name] = config;
                 
@@ -1381,6 +1752,7 @@
             // Populate the Valid Users/Groups suggestion list from this system's
             // real accounts/groups (best-effort; failures are silently ignored).
             loadUserGroupSuggestions();
+            wireShareUsersAutocomplete();
         }
 
         init();

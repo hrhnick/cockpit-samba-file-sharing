@@ -1,0 +1,12 @@
+{
+    "requires": {
+        "cockpit": "137"
+    },
+
+    "menu": {
+        "index": {
+            "label": "Samba shares",
+            "order": 100
+        }
+    }
+}

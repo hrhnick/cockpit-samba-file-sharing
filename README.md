@@ -1,17 +1,14 @@
 # Cockpit Samba Manager
 
-A hacked, probably broken, two file (.json + .html) file sharing management plugin for [Cockpit](https://cockpit-project.org/) that provides a web interface for managing Samba shares and users.
+A hacked, probably broken, file sharing management plugin for [Cockpit](https://cockpit-project.org/) that provides a web interface for managing Samba shares and users.
 
-<img width="1257" height="943" alt="screenshot" src="https://github.com/user-attachments/assets/69f2b796-1e58-44b6-af3b-68f65e2f63a2" />
+<img width="1731" height="748" alt="Screenshot 2026-07-08 at 1 52 43 PM" src="https://github.com/user-attachments/assets/38a35565-a132-4190-b91c-66120f9ae022" />
+
 
 
 ## Installation
 
-```bash
-sudo mkdir -p /usr/share/cockpit/samba
-sudo cp -r * /usr/share/cockpit/samba/
-sudo systemctl reload cockpit
-```
+
 
 Access through Cockpit at `https://your-server:9090`
 
@@ -29,6 +26,8 @@ Access through Cockpit at `https://your-server:9090`
 - Configure guest access and browseable options
 - Manage valid users and groups per share
 - Edit and delete existing shares
+- Fix SELinux
+- Fix missing folders
 
 **User Management**
 - Enable/disable Samba access for system users
@@ -41,6 +40,8 @@ Access through Cockpit at `https://your-server:9090`
 - Monitor Samba service status
 - Start, stop, and restart Samba
 - Automatic service detection (smb/smbd)
+- Enable advanced logging
+- View logs
 
 ## Configuration
 

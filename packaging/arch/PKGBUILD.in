@@ -1,9 +1,9 @@
 pkgname=cockpit-samba
 pkgver=VERSION
 pkgrel=1
-pkgdesc='Cockpit Samba Example Module'
+pkgdesc='Cockpit module for managing Samba file shares'
 arch=('x86_64')
-url='https://github.com/cockpit-project/samba'
+url='https://github.com/hrhnick/cockpit-samba'
 license=(LGPL)
 source=("SOURCE")
 sha256sums=('SKIP')

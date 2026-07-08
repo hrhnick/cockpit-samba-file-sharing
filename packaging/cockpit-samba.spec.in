@@ -9,8 +9,8 @@ License: LGPL-2.1-or-later
 %define rebuild_bundle 1
 %endif
 
-Source0: https://github.com/hrhnick/cockpit-samba-file-sharing/releases/download/%{version}/%{name}-%{version}.tar.xz
-Source1: https://github.com/hrhnick/cockpit-samba-file-sharing/releases/download/%{version}/%{name}-node-%{version}.tar.xz
+Source0: https://github.com/hrhnick/cockpit-samba/releases/download/%{version}/%{name}-%{version}.tar.xz
+Source1: https://github.com/hrhnick/cockpit-samba/releases/download/%{version}/%{name}-node-%{version}.tar.xz
 
 BuildArch: noarch
 %if ! 0%{?suse_version}

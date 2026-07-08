@@ -15,8 +15,8 @@
   </description>
   <extends>org.cockpit_project.cockpit</extends>
   <launchable type="cockpit-manifest">samba</launchable>
-  <url type="homepage">https://github.com/hrhnick/cockpit-samba-file-sharing</url>
-  <url type="bugtracker">https://github.com/hrhnick/cockpit-samba-file-sharing/issues</url>
+  <url type="homepage">https://github.com/hrhnick/cockpit-samba</url>
+  <url type="bugtracker">https://github.com/hrhnick/cockpit-samba/issues</url>
   <update_contact>hrhnick_AT_hrhnick.com</update_contact>
   <developer id="com.hrhnick">
     <name>Nick Bonczyk</name>

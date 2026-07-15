@@ -40,9 +40,9 @@
     "typescript": "7.0.2"
   },
   "dependencies": {
-    "@patternfly/patternfly": "6.1.0",
-    "@patternfly/react-core": "6.1.0",
-    "@patternfly/react-icons": "6.1.0",
+    "@patternfly/patternfly": "6.6.0",
+    "@patternfly/react-core": "6.6.0",
+    "@patternfly/react-icons": "6.6.0",
     "@patternfly/react-styles": "6.6.0",
     "@patternfly/react-table": "^6.6.0",
     "argparse": "3.0.0",
